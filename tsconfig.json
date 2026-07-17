@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react",
+    "jsxFactory": "React.createElement",
+    "jsxFragmentFactory": "React.Fragment",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": ["react"],
+    "baseUrl": ".",
+    "paths": { "@lib/*": ["lib/*"] }
+  },
+  "include": ["plugins", "lib", "bunny.d.ts"]
+}
