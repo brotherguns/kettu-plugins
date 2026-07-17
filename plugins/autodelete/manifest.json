@@ -1,0 +1,12 @@
+{
+  "id": "brotherguns.autodelete",
+  "spec": 3,
+  "version": "1.0.0",
+  "type": "plugin",
+  "main": "index.js",
+  "display": {
+    "name": "AutoDelete",
+    "description": "Auto-deletes messages from blacklisted users in configured servers (requires Manage Messages).",
+    "authors": [{ "name": "brotherguns", "id": "877502759404974110" }]
+  }
+}
