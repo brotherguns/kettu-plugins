@@ -4,7 +4,7 @@ const { React } = bunny.metro.common;
 
 // Design-system components — confirm names via /eval (see note above).
 const { TableRowGroup, TableRow, TextInput, Button, Stack } =
-  bunny.metro.findByProps("TableRowGroup", "TableRow", "Stack");
+  bunny.metro.findByProps("TableRowGroup", "TableRow", "TextInput", "Button", "Stack");
 
 export function createSettingsList(storage: PluginStorage) {
   return function SettingsList() {
