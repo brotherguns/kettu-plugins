@@ -9,9 +9,8 @@
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "types": ["react"],
-    "baseUrl": ".",
-    "paths": { "@lib/*": ["lib/*"] }
+    "types": ["react"]
   },
-  "include": ["plugins", "lib", "bunny.d.ts"]
+  "include": ["plugins", "lib", "bunny.d.ts"],
+  "exclude": ["**/*.test.ts", "node_modules", "dist"]
 }
