@@ -8,16 +8,21 @@ storage.rules ??= [];
 
 const logger = bunny.plugin.logger;
 const { FluxDispatcher } = bunny.metro.common;
+const ChannelStore = bunny.metro.findByProps("getChannel", "getDMFromUserId");
 const rest = createRest(logger);
 
 function onMessageCreate(payload: any) {
   const msg = payload?.message;
   if (!msg) return;
   const authorId = msg.author?.id;
-  const guildId = msg.guild_id ?? payload.guildId;
-  if (!guildId) return; // DMs have no guild_id
+  // MESSAGE_CREATE carries no guild id (on the payload or the message); it must
+  // be resolved from the channel. channelId is on the payload; fall back to the
+  // message's own channel_id.
+  const channelId = payload.channelId ?? msg.channel_id;
+  const guildId = ChannelStore?.getChannel?.(channelId)?.guild_id;
+  if (!guildId) return; // DMs / unresolved channels have no guild
   if (matches(storage.rules, authorId, guildId)) {
-    rest.deleteMessage(msg.channel_id, msg.id);
+    rest.deleteMessage(channelId, msg.id);
   }
 }
 
