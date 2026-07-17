@@ -1,0 +1,12 @@
+{
+  "$meta": {
+    "name": "brotherguns' plugins",
+    "description": "Moderation plugins for Kettu"
+  },
+  "brotherguns.autodelete": {
+    "version": "1.0.0"
+  },
+  "brotherguns.autokick": {
+    "version": "1.0.0"
+  }
+}
