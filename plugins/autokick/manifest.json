@@ -1,0 +1,12 @@
+{
+  "id": "brotherguns.autokick",
+  "spec": 3,
+  "version": "1.0.0",
+  "type": "plugin",
+  "main": "index.js",
+  "display": {
+    "name": "AutoKick",
+    "description": "Kicks blacklisted users on start (sweep) and whenever they join configured servers (requires Kick Members).",
+    "authors": [{ "name": "brotherguns", "id": "877502759404974110" }]
+  }
+}
