@@ -1,4 +1,4 @@
-(()=>{var module={exports:{}},exports=module.exports;
+(function(){var module={exports:{}},exports=module.exports;
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -27,9 +27,10 @@ module.exports = __toCommonJS(autodelete_exports);
 
 // lib/queue.ts
 function createQueue(opts = {}) {
-  const delayMs = opts.delayMs ?? 750;
-  const onError = opts.onError ?? (() => {
-  });
+  var _a2, _b;
+  const delayMs = (_a2 = opts.delayMs) != null ? _a2 : 750;
+  const onError = (_b = opts.onError) != null ? _b : () => {
+  };
   let pending = [];
   let running = false;
   async function drain() {
@@ -65,7 +66,8 @@ function createQueue(opts = {}) {
 
 // lib/rest.ts
 function createRest(logger2) {
-  const RestAPI = vendetta.metro.findByProps("getAPIBaseURL", "del") ?? vendetta.metro.findByProps("getAPIBaseURL");
+  var _a2;
+  const RestAPI = (_a2 = vendetta.metro.findByProps("getAPIBaseURL", "del")) != null ? _a2 : vendetta.metro.findByProps("getAPIBaseURL");
   const queue = createQueue({
     delayMs: 750,
     onError: (e) => logger2.error("[kettu-mod] REST action failed:", e)
@@ -169,18 +171,20 @@ function createSettingsList(storage2) {
 
 // plugins/autodelete/index.tsx
 var storage = vendetta.plugin.storage;
-storage.rules ??= [];
+var _a;
+(_a = storage.rules) != null ? _a : storage.rules = [];
 var logger = vendetta.logger;
 var { FluxDispatcher } = vendetta.metro.common;
 var ChannelStore = vendetta.metro.findByProps("getChannel", "getDMFromUserId");
 var rest = createRest(logger);
 function onMessageCreate(payload) {
-  const msg = payload?.message;
+  var _a2, _b, _c, _d;
+  const msg = payload == null ? void 0 : payload.message;
   if (!msg)
     return;
-  const authorId = msg.author?.id;
-  const channelId = payload.channelId ?? msg.channel_id;
-  const guildId = ChannelStore?.getChannel?.(channelId)?.guild_id;
+  const authorId = (_a2 = msg.author) == null ? void 0 : _a2.id;
+  const channelId = (_b = payload.channelId) != null ? _b : msg.channel_id;
+  const guildId = (_d = (_c = ChannelStore == null ? void 0 : ChannelStore.getChannel) == null ? void 0 : _c.call(ChannelStore, channelId)) == null ? void 0 : _d.guild_id;
   if (!guildId)
     return;
   if (matches(storage.rules, authorId, guildId)) {
@@ -201,4 +205,4 @@ var plugin = {
 };
 var autodelete_default = plugin;
 
-return module.exports.default??module.exports;})()
+var __d=module.exports&&module.exports.default;return __d?__d:module.exports;})()

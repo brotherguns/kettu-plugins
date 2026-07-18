@@ -1,4 +1,4 @@
-(()=>{var module={exports:{}},exports=module.exports;
+(function(){var module={exports:{}},exports=module.exports;
 "use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -27,9 +27,10 @@ module.exports = __toCommonJS(autokick_exports);
 
 // lib/queue.ts
 function createQueue(opts = {}) {
-  const delayMs = opts.delayMs ?? 750;
-  const onError = opts.onError ?? (() => {
-  });
+  var _a2, _b;
+  const delayMs = (_a2 = opts.delayMs) != null ? _a2 : 750;
+  const onError = (_b = opts.onError) != null ? _b : () => {
+  };
   let pending = [];
   let running = false;
   async function drain() {
@@ -65,7 +66,8 @@ function createQueue(opts = {}) {
 
 // lib/rest.ts
 function createRest(logger2) {
-  const RestAPI = vendetta.metro.findByProps("getAPIBaseURL", "del") ?? vendetta.metro.findByProps("getAPIBaseURL");
+  var _a2;
+  const RestAPI = (_a2 = vendetta.metro.findByProps("getAPIBaseURL", "del")) != null ? _a2 : vendetta.metro.findByProps("getAPIBaseURL");
   const queue = createQueue({
     delayMs: 750,
     onError: (e) => logger2.error("[kettu-mod] REST action failed:", e)
@@ -169,13 +171,15 @@ function createSettingsList(storage2) {
 
 // plugins/autokick/index.tsx
 var storage = vendetta.plugin.storage;
-storage.rules ??= [];
+var _a;
+(_a = storage.rules) != null ? _a : storage.rules = [];
 var logger = vendetta.logger;
 var { FluxDispatcher } = vendetta.metro.common;
 var rest = createRest(logger);
 function onMemberAdd(payload) {
-  const guildId = payload?.guildId ?? payload?.guild_id;
-  const userId = payload?.user?.id ?? payload?.member?.user?.id;
+  var _a2, _b, _c, _d, _e;
+  const guildId = (_a2 = payload == null ? void 0 : payload.guildId) != null ? _a2 : payload == null ? void 0 : payload.guild_id;
+  const userId = (_e = (_b = payload == null ? void 0 : payload.user) == null ? void 0 : _b.id) != null ? _e : (_d = (_c = payload == null ? void 0 : payload.member) == null ? void 0 : _c.user) == null ? void 0 : _d.id;
   if (matches(storage.rules, userId, guildId)) {
     rest.kickMember(guildId, userId);
   }
@@ -201,4 +205,4 @@ var plugin = {
 };
 var autokick_default = plugin;
 
-return module.exports.default??module.exports;})()
+var __d=module.exports&&module.exports.default;return __d?__d:module.exports;})()
