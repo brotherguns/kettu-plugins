@@ -97,12 +97,11 @@ function matches(rules, userId, guildId) {
 }
 
 // lib/SettingsList.tsx
-var { React, ReactNative } = vendetta.metro.common;
-var { Forms } = vendetta.ui.components;
-var { FormInput, FormRow, FormDivider, FormText } = Forms;
-var { ScrollView, View } = ReactNative;
 function createSettingsList(storage2) {
   return function SettingsList() {
+    const React = vendetta.metro.common.React;
+    const RN = vendetta.metro.common.ReactNative;
+    const { ScrollView, View, Text, TextInput, TouchableOpacity } = RN;
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const [userId, setUserId] = React.useState("");
     const [guildId, setGuildId] = React.useState("");
@@ -118,37 +117,52 @@ function createSettingsList(storage2) {
       storage2.rules.splice(index, 1);
       forceUpdate();
     };
-    return /* @__PURE__ */ React.createElement(ScrollView, { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(
-      FormInput,
+    const input = {
+      color: "#fff",
+      backgroundColor: "#1e1f22",
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 10,
+      fontSize: 16
+    };
+    const label = { color: "#b5bac1", fontSize: 13, marginBottom: 4 };
+    return /* @__PURE__ */ React.createElement(ScrollView, { style: { flex: 1 }, contentContainerStyle: { padding: 16 } }, /* @__PURE__ */ React.createElement(Text, { style: label }, "User ID"), /* @__PURE__ */ React.createElement(
+      TextInput,
       {
-        title: "User ID",
+        style: input,
         value: userId,
-        onChange: (v) => setUserId(v),
-        placeholder: "e.g. 877502759404974110"
+        onChangeText: setUserId,
+        placeholder: "e.g. 877502759404974110",
+        placeholderTextColor: "#6d6f78",
+        keyboardType: "numeric"
       }
-    ), /* @__PURE__ */ React.createElement(
-      FormInput,
+    ), /* @__PURE__ */ React.createElement(Text, { style: label }, "Server (Guild) ID"), /* @__PURE__ */ React.createElement(
+      TextInput,
       {
-        title: "Server (Guild) ID",
+        style: input,
         value: guildId,
-        onChange: (v) => setGuildId(v),
-        placeholder: "e.g. 1368145952266911755"
+        onChangeText: setGuildId,
+        placeholder: "e.g. 1368145952266911755",
+        placeholderTextColor: "#6d6f78",
+        keyboardType: "numeric"
       }
     ), /* @__PURE__ */ React.createElement(
-      FormRow,
+      TouchableOpacity,
       {
-        label: "Add rule",
-        subLabel: "Adds the user + server pair above",
-        onPress: addRule
-      }
-    ), /* @__PURE__ */ React.createElement(FormDivider, null), storage2.rules.length === 0 ? /* @__PURE__ */ React.createElement(View, { style: { padding: 16 } }, /* @__PURE__ */ React.createElement(FormText, null, "No rules yet. Add a User ID + Server ID above.")) : storage2.rules.map((rule, i) => /* @__PURE__ */ React.createElement(
-      FormRow,
+        onPress: addRule,
+        style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 16 }
+      },
+      /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Add rule")
+    ), /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 8 } }, "Rules (", storage2.rules.length, ")"), storage2.rules.length === 0 ? /* @__PURE__ */ React.createElement(Text, { style: { color: "#6d6f78" } }, "No rules yet. Add a User ID + Server ID above.") : storage2.rules.map((rule, i) => /* @__PURE__ */ React.createElement(
+      TouchableOpacity,
       {
         key: `${rule.userId}-${rule.guildId}-${i}`,
-        label: `User ${rule.userId}`,
-        subLabel: `Server ${rule.guildId} \u2014 tap to remove`,
-        onPress: () => removeRule(i)
-      }
+        onPress: () => removeRule(i),
+        style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, marginBottom: 8 }
+      },
+      /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 15 } }, "User ", rule.userId),
+      /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13 } }, "Server ", rule.guildId, " \u2014 tap to remove")
     )));
   };
 }
