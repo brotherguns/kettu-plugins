@@ -27,8 +27,8 @@ module.exports = __toCommonJS(autodelete_exports);
 
 // lib/queue.ts
 function createQueue(opts = {}) {
-  var _a2, _b;
-  const delayMs = (_a2 = opts.delayMs) != null ? _a2 : 750;
+  var _a, _b;
+  const delayMs = (_a = opts.delayMs) != null ? _a : 750;
   const onError = (_b = opts.onError) != null ? _b : () => {
   };
   let pending = [];
@@ -65,16 +65,16 @@ function createQueue(opts = {}) {
 }
 
 // lib/rest.ts
-function createRest(logger2) {
-  var _a2;
-  const RestAPI = (_a2 = vendetta.metro.findByProps("getAPIBaseURL", "del")) != null ? _a2 : vendetta.metro.findByProps("getAPIBaseURL");
+function createRest(logger) {
+  var _a;
+  const RestAPI = (_a = vendetta.metro.findByProps("getAPIBaseURL", "del")) != null ? _a : vendetta.metro.findByProps("getAPIBaseURL");
   const queue = createQueue({
     delayMs: 750,
-    onError: (e) => logger2.error("[kettu-mod] REST action failed:", e)
+    onError: (e) => logger.error("[kettu-mod] REST action failed:", e)
   });
   function del(url, label) {
     queue.push(async () => {
-      logger2.log(`[kettu-mod] ${label} -> ${url}`);
+      logger.log(`[kettu-mod] ${label} -> ${url}`);
       await RestAPI.del({ url });
     });
   }
@@ -99,11 +99,14 @@ function matches(rules, userId, guildId) {
 }
 
 // lib/SettingsList.tsx
-function createSettingsList(storage2) {
+function createSettingsList() {
   return function SettingsList() {
     const React = vendetta.metro.common.React;
     const RN = vendetta.metro.common.ReactNative;
     const { ScrollView, View, Text, TextInput, TouchableOpacity } = RN;
+    const storage2 = vendetta.plugin.storage;
+    if (!storage2.rules)
+      storage2.rules = [];
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const [userId, setUserId] = React.useState("");
     const [guildId, setGuildId] = React.useState("");
@@ -170,38 +173,62 @@ function createSettingsList(storage2) {
 }
 
 // plugins/autodelete/index.tsx
-var storage = vendetta.plugin.storage;
-var _a;
-(_a = storage.rules) != null ? _a : storage.rules = [];
-var logger = vendetta.logger;
-var { FluxDispatcher } = vendetta.metro.common;
-var ChannelStore = vendetta.metro.findByProps("getChannel", "getDMFromUserId");
-var rest = createRest(logger);
+var storage;
+var rest = null;
+var unsubscribe = null;
+function toast(msg) {
+  try {
+    vendetta.ui.toasts.showToast(msg);
+  } catch (e) {
+  }
+}
 function onMessageCreate(payload) {
-  var _a2, _b, _c, _d;
-  const msg = payload == null ? void 0 : payload.message;
-  if (!msg)
-    return;
-  const authorId = (_a2 = msg.author) == null ? void 0 : _a2.id;
-  const channelId = (_b = payload.channelId) != null ? _b : msg.channel_id;
-  const guildId = (_d = (_c = ChannelStore == null ? void 0 : ChannelStore.getChannel) == null ? void 0 : _c.call(ChannelStore, channelId)) == null ? void 0 : _d.guild_id;
-  if (!guildId)
-    return;
-  if (matches(storage.rules, authorId, guildId)) {
-    rest.deleteMessage(channelId, msg.id);
+  try {
+    const msg = payload && payload.message;
+    if (!msg)
+      return;
+    const authorId = msg.author && msg.author.id;
+    const channelId = payload && payload.channelId || msg.channel_id;
+    const ChannelStore = vendetta.metro.findByProps("getChannel", "getDMFromUserId");
+    const ch = ChannelStore && ChannelStore.getChannel && ChannelStore.getChannel(channelId);
+    const guildId = ch && ch.guild_id;
+    if (!guildId)
+      return;
+    if (rest && matches(storage.rules, authorId, guildId)) {
+      rest.deleteMessage(channelId, msg.id);
+    }
+  } catch (e) {
   }
 }
 var plugin = {
   onLoad() {
-    FluxDispatcher.subscribe("MESSAGE_CREATE", onMessageCreate);
-    logger.log("[AutoDelete] loaded");
+    try {
+      storage = vendetta.plugin.storage;
+      if (!storage.rules)
+        storage.rules = [];
+      rest = createRest(vendetta.logger);
+      const FD = vendetta.metro.common.FluxDispatcher;
+      FD.subscribe("MESSAGE_CREATE", onMessageCreate);
+      unsubscribe = () => FD.unsubscribe("MESSAGE_CREATE", onMessageCreate);
+      toast("AutoDelete: enabled");
+    } catch (e) {
+      toast("AutoDelete error: " + (e && e.message ? e.message : String(e)));
+    }
   },
   onUnload() {
-    FluxDispatcher.unsubscribe("MESSAGE_CREATE", onMessageCreate);
-    rest.dispose();
-    logger.log("[AutoDelete] unloaded");
+    try {
+      if (unsubscribe)
+        unsubscribe();
+    } catch (e) {
+    }
+    try {
+      if (rest)
+        rest.dispose();
+    } catch (e) {
+    }
+    unsubscribe = null;
   },
-  settings: createSettingsList(storage)
+  settings: createSettingsList()
 };
 var autodelete_default = plugin;
 

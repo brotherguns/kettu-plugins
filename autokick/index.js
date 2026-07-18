@@ -27,8 +27,8 @@ module.exports = __toCommonJS(autokick_exports);
 
 // lib/queue.ts
 function createQueue(opts = {}) {
-  var _a2, _b;
-  const delayMs = (_a2 = opts.delayMs) != null ? _a2 : 750;
+  var _a, _b;
+  const delayMs = (_a = opts.delayMs) != null ? _a : 750;
   const onError = (_b = opts.onError) != null ? _b : () => {
   };
   let pending = [];
@@ -65,16 +65,16 @@ function createQueue(opts = {}) {
 }
 
 // lib/rest.ts
-function createRest(logger2) {
-  var _a2;
-  const RestAPI = (_a2 = vendetta.metro.findByProps("getAPIBaseURL", "del")) != null ? _a2 : vendetta.metro.findByProps("getAPIBaseURL");
+function createRest(logger) {
+  var _a;
+  const RestAPI = (_a = vendetta.metro.findByProps("getAPIBaseURL", "del")) != null ? _a : vendetta.metro.findByProps("getAPIBaseURL");
   const queue = createQueue({
     delayMs: 750,
-    onError: (e) => logger2.error("[kettu-mod] REST action failed:", e)
+    onError: (e) => logger.error("[kettu-mod] REST action failed:", e)
   });
   function del(url, label) {
     queue.push(async () => {
-      logger2.log(`[kettu-mod] ${label} -> ${url}`);
+      logger.log(`[kettu-mod] ${label} -> ${url}`);
       await RestAPI.del({ url });
     });
   }
@@ -99,11 +99,14 @@ function matches(rules, userId, guildId) {
 }
 
 // lib/SettingsList.tsx
-function createSettingsList(storage2) {
+function createSettingsList() {
   return function SettingsList() {
     const React = vendetta.metro.common.React;
     const RN = vendetta.metro.common.ReactNative;
     const { ScrollView, View, Text, TextInput, TouchableOpacity } = RN;
+    const storage2 = vendetta.plugin.storage;
+    if (!storage2.rules)
+      storage2.rules = [];
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const [userId, setUserId] = React.useState("");
     const [guildId, setGuildId] = React.useState("");
@@ -170,38 +173,62 @@ function createSettingsList(storage2) {
 }
 
 // plugins/autokick/index.tsx
-var storage = vendetta.plugin.storage;
-var _a;
-(_a = storage.rules) != null ? _a : storage.rules = [];
-var logger = vendetta.logger;
-var { FluxDispatcher } = vendetta.metro.common;
-var rest = createRest(logger);
+var storage;
+var rest = null;
+var unsubscribe = null;
+function toast(msg) {
+  try {
+    vendetta.ui.toasts.showToast(msg);
+  } catch (e) {
+  }
+}
 function onMemberAdd(payload) {
-  var _a2, _b, _c, _d, _e;
-  const guildId = (_a2 = payload == null ? void 0 : payload.guildId) != null ? _a2 : payload == null ? void 0 : payload.guild_id;
-  const userId = (_e = (_b = payload == null ? void 0 : payload.user) == null ? void 0 : _b.id) != null ? _e : (_d = (_c = payload == null ? void 0 : payload.member) == null ? void 0 : _c.user) == null ? void 0 : _d.id;
-  if (matches(storage.rules, userId, guildId)) {
-    rest.kickMember(guildId, userId);
+  try {
+    const guildId = payload && payload.guildId || payload && payload.guild_id;
+    const userId = payload && payload.user && payload.user.id || payload && payload.member && payload.member.user && payload.member.user.id;
+    if (rest && matches(storage.rules, userId, guildId)) {
+      rest.kickMember(guildId, userId);
+    }
+  } catch (e) {
   }
 }
 function sweep() {
-  for (const rule of storage.rules) {
-    rest.kickMember(rule.guildId, rule.userId);
+  const rules = storage.rules || [];
+  for (let i = 0; i < rules.length; i++) {
+    if (rest)
+      rest.kickMember(rules[i].guildId, rules[i].userId);
   }
-  logger.log(`[AutoKick] sweep queued ${storage.rules.length} rule(s)`);
 }
 var plugin = {
   onLoad() {
-    sweep();
-    FluxDispatcher.subscribe("GUILD_MEMBER_ADD", onMemberAdd);
-    logger.log("[AutoKick] loaded");
+    try {
+      storage = vendetta.plugin.storage;
+      if (!storage.rules)
+        storage.rules = [];
+      rest = createRest(vendetta.logger);
+      sweep();
+      const FD = vendetta.metro.common.FluxDispatcher;
+      FD.subscribe("GUILD_MEMBER_ADD", onMemberAdd);
+      unsubscribe = () => FD.unsubscribe("GUILD_MEMBER_ADD", onMemberAdd);
+      toast("AutoKick: enabled (" + storage.rules.length + " rule(s))");
+    } catch (e) {
+      toast("AutoKick error: " + (e && e.message ? e.message : String(e)));
+    }
   },
   onUnload() {
-    FluxDispatcher.unsubscribe("GUILD_MEMBER_ADD", onMemberAdd);
-    rest.dispose();
-    logger.log("[AutoKick] unloaded");
+    try {
+      if (unsubscribe)
+        unsubscribe();
+    } catch (e) {
+    }
+    try {
+      if (rest)
+        rest.dispose();
+    } catch (e) {
+    }
+    unsubscribe = null;
   },
-  settings: createSettingsList(storage)
+  settings: createSettingsList()
 };
 var autokick_default = plugin;
 
