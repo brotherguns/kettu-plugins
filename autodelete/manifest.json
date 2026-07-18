@@ -1,0 +1,12 @@
+{
+  "name": "AutoDelete",
+  "description": "Auto-deletes messages from blacklisted users in configured servers (requires Manage Messages).",
+  "authors": [
+    {
+      "name": "brotherguns",
+      "id": "877502759404974110"
+    }
+  ],
+  "main": "index.js",
+  "hash": "2ab68616bbd01da79ae1f86a0f93eeeca16687d6806331999a3a5dca4d037d31"
+}

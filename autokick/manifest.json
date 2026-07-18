@@ -1,0 +1,12 @@
+{
+  "name": "AutoKick",
+  "description": "Kicks blacklisted users on load (sweep) and whenever they join configured servers (requires Kick Members).",
+  "authors": [
+    {
+      "name": "brotherguns",
+      "id": "877502759404974110"
+    }
+  ],
+  "main": "index.js",
+  "hash": "718f4f879b63615b452e85f39b8592aaea3202da5f69183781f1d4d359004457"
+}
