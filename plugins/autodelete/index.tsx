@@ -1,23 +1,22 @@
-import type { PluginStorage } from "../../bunny";
+import type { PluginStorage, VendettaPlugin } from "../../vendetta";
 import { createRest } from "../../lib/rest";
 import { matches } from "../../lib/rules";
 import { createSettingsList } from "../../lib/SettingsList";
 
-const storage = bunny.plugin.createStorage<PluginStorage>();
+const storage = vendetta.plugin.storage as PluginStorage;
 storage.rules ??= [];
 
-const logger = bunny.plugin.logger;
-const { FluxDispatcher } = bunny.metro.common;
-const ChannelStore = bunny.metro.findByProps("getChannel", "getDMFromUserId");
+const logger = vendetta.logger;
+const { FluxDispatcher } = vendetta.metro.common;
+// MESSAGE_CREATE carries no guild id (verified on-device), so resolve it from
+// the channel via ChannelStore.
+const ChannelStore = vendetta.metro.findByProps("getChannel", "getDMFromUserId");
 const rest = createRest(logger);
 
 function onMessageCreate(payload: any) {
   const msg = payload?.message;
   if (!msg) return;
   const authorId = msg.author?.id;
-  // MESSAGE_CREATE carries no guild id (on the payload or the message); it must
-  // be resolved from the channel. channelId is on the payload; fall back to the
-  // message's own channel_id.
   const channelId = payload.channelId ?? msg.channel_id;
   const guildId = ChannelStore?.getChannel?.(channelId)?.guild_id;
   if (!guildId) return; // DMs / unresolved channels have no guild
@@ -26,15 +25,17 @@ function onMessageCreate(payload: any) {
   }
 }
 
-export default definePlugin({
-  start() {
+const plugin: VendettaPlugin = {
+  onLoad() {
     FluxDispatcher.subscribe("MESSAGE_CREATE", onMessageCreate);
-    logger.log("[AutoDelete] started");
+    logger.log("[AutoDelete] loaded");
   },
-  stop() {
+  onUnload() {
     FluxDispatcher.unsubscribe("MESSAGE_CREATE", onMessageCreate);
     rest.dispose();
-    logger.log("[AutoDelete] stopped");
+    logger.log("[AutoDelete] unloaded");
   },
-  SettingsComponent: createSettingsList(storage),
-});
+  settings: createSettingsList(storage),
+};
+
+export default plugin;

@@ -11,6 +11,6 @@
     "esModuleInterop": true,
     "types": ["react"]
   },
-  "include": ["plugins", "lib", "bunny.d.ts"],
+  "include": ["plugins", "lib", "vendetta.d.ts"],
   "exclude": ["**/*.test.ts", "node_modules", "dist"]
 }

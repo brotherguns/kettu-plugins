@@ -1,11 +1,14 @@
-import type { PluginStorage } from "../bunny";
+import type { PluginStorage } from "../vendetta";
 
-const { React } = bunny.metro.common;
+const { React, ReactNative } = vendetta.metro.common;
+const { Forms } = vendetta.ui.components;
+const { FormInput, FormRow, FormDivider, FormText } = Forms;
+const { ScrollView, View } = ReactNative;
 
-// Design-system components — confirm names via /eval (see note above).
-const { TableRowGroup, TableRow, TextInput, Button, Stack } =
-  bunny.metro.findByProps("TableRowGroup", "TableRow", "TextInput", "Button", "Stack");
-
+// Settings screen for a plugin: two inputs (user ID + server/guild ID) and an
+// "Add rule" button, followed by the current rule list. Tap a rule to remove
+// it. Mutations write straight to the persisted `storage` proxy; a local
+// counter forces a re-render.
 export function createSettingsList(storage: PluginStorage) {
   return function SettingsList() {
     const [, forceUpdate] = React.useReducer((x: number) => x + 1, 0);
@@ -26,31 +29,40 @@ export function createSettingsList(storage: PluginStorage) {
     };
 
     return (
-      <Stack spacing={12} style={{ padding: 12 }}>
-        <TextInput
-          label="User ID"
+      <ScrollView style={{ flex: 1 }}>
+        <FormInput
+          title="User ID"
           value={userId}
-          onChange={setUserId}
+          onChange={(v: string) => setUserId(v)}
           placeholder="e.g. 877502759404974110"
         />
-        <TextInput
-          label="Server (Guild) ID"
+        <FormInput
+          title="Server (Guild) ID"
           value={guildId}
-          onChange={setGuildId}
+          onChange={(v: string) => setGuildId(v)}
           placeholder="e.g. 1368145952266911755"
         />
-        <Button text="Add rule" onPress={addRule} />
-        <TableRowGroup title="Rules">
-          {storage.rules.map((rule, i) => (
-            <TableRow
+        <FormRow
+          label="Add rule"
+          subLabel="Adds the user + server pair above"
+          onPress={addRule}
+        />
+        <FormDivider />
+        {storage.rules.length === 0 ? (
+          <View style={{ padding: 16 }}>
+            <FormText>No rules yet. Add a User ID + Server ID above.</FormText>
+          </View>
+        ) : (
+          storage.rules.map((rule, i) => (
+            <FormRow
               key={`${rule.userId}-${rule.guildId}-${i}`}
               label={`User ${rule.userId}`}
-              subLabel={`Guild ${rule.guildId}`}
-              trailing={<Button text="Remove" onPress={() => removeRule(i)} />}
+              subLabel={`Server ${rule.guildId} — tap to remove`}
+              onPress={() => removeRule(i)}
             />
-          ))}
-        </TableRowGroup>
-      </Stack>
+          ))
+        )}
+      </ScrollView>
     );
   };
 }

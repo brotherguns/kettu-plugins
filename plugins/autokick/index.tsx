@@ -1,13 +1,13 @@
-import type { PluginStorage } from "../../bunny";
+import type { PluginStorage, VendettaPlugin } from "../../vendetta";
 import { createRest } from "../../lib/rest";
 import { matches } from "../../lib/rules";
 import { createSettingsList } from "../../lib/SettingsList";
 
-const storage = bunny.plugin.createStorage<PluginStorage>();
+const storage = vendetta.plugin.storage as PluginStorage;
 storage.rules ??= [];
 
-const logger = bunny.plugin.logger;
-const { FluxDispatcher } = bunny.metro.common;
+const logger = vendetta.logger;
+const { FluxDispatcher } = vendetta.metro.common;
 const rest = createRest(logger);
 
 function onMemberAdd(payload: any) {
@@ -26,16 +26,18 @@ function sweep() {
   logger.log(`[AutoKick] sweep queued ${storage.rules.length} rule(s)`);
 }
 
-export default definePlugin({
-  start() {
+const plugin: VendettaPlugin = {
+  onLoad() {
     sweep();
     FluxDispatcher.subscribe("GUILD_MEMBER_ADD", onMemberAdd);
-    logger.log("[AutoKick] started");
+    logger.log("[AutoKick] loaded");
   },
-  stop() {
+  onUnload() {
     FluxDispatcher.unsubscribe("GUILD_MEMBER_ADD", onMemberAdd);
     rest.dispose();
-    logger.log("[AutoKick] stopped");
+    logger.log("[AutoKick] unloaded");
   },
-  SettingsComponent: createSettingsList(storage),
-});
+  settings: createSettingsList(storage),
+};
+
+export default plugin;

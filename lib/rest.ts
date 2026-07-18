@@ -1,9 +1,13 @@
-import type { Logger } from "../bunny";
+import type { Logger } from "../vendetta";
 import { createQueue } from "./queue";
 
+// Resolves Discord's RestAPI and exposes throttled delete/kick helpers.
+// Every call is queued (sequential, spaced out) and errors are logged, never
+// thrown — a missing permission or "not a member" (404) must not break the
+// listener or crash the client.
 export function createRest(logger: Logger) {
-  const RestAPI = bunny.metro.findByProps("getAPIBaseURL", "del")
-    ?? bunny.metro.findByProps("getAPIBaseURL");
+  const RestAPI = vendetta.metro.findByProps("getAPIBaseURL", "del")
+    ?? vendetta.metro.findByProps("getAPIBaseURL");
 
   const queue = createQueue({
     delayMs: 750,
