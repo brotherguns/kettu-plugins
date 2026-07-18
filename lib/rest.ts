@@ -15,9 +15,10 @@ export function createRest(logger: Logger) {
   });
 
   function del(url: string, label: string) {
-    queue.push(async () => {
+    // No async/await — return the promise so the bundle stays Hermes-safe.
+    queue.push(() => {
       logger.log(`[kettu-mod] ${label} -> ${url}`);
-      await RestAPI.del({ url });
+      return RestAPI.del({ url });
     });
   }
 
