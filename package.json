@@ -5,7 +5,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "serve": "node scripts/serve.mjs",
-    "test": "bun test"
+    "test": "bun test",
+    "debug": "bash scripts/debug-server.sh"
   },
   "devDependencies": {
     "esbuild": "^0.20.2",
