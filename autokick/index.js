@@ -33,27 +33,41 @@ function createQueue(opts = {}) {
   };
   let pending = [];
   let running = false;
-  async function drain() {
+  function scheduleNext() {
+    if (pending.length && delayMs > 0) {
+      setTimeout(runNext, delayMs);
+    } else {
+      runNext();
+    }
+  }
+  function runNext() {
+    if (!pending.length) {
+      running = false;
+      return;
+    }
+    const task = pending.shift();
+    let p;
+    try {
+      p = Promise.resolve(task());
+    } catch (e) {
+      onError(e);
+      p = Promise.resolve();
+    }
+    p.then(scheduleNext, (e) => {
+      onError(e);
+      scheduleNext();
+    });
+  }
+  function drain() {
     if (running)
       return;
     running = true;
-    while (pending.length) {
-      const task = pending.shift();
-      try {
-        await task();
-      } catch (e) {
-        onError(e);
-      }
-      if (pending.length && delayMs > 0) {
-        await new Promise((r) => setTimeout(r, delayMs));
-      }
-    }
-    running = false;
+    runNext();
   }
   return {
     push(task) {
       pending.push(task);
-      void drain();
+      drain();
     },
     clear() {
       pending = [];
@@ -73,9 +87,9 @@ function createRest(logger) {
     onError: (e) => logger.error("[kettu-mod] REST action failed:", e)
   });
   function del(url, label) {
-    queue.push(async () => {
+    queue.push(() => {
       logger.log(`[kettu-mod] ${label} -> ${url}`);
-      await RestAPI.del({ url });
+      return RestAPI.del({ url });
     });
   }
   return {
