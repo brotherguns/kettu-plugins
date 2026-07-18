@@ -3,41 +3,59 @@ import { createRest } from "../../lib/rest";
 import { matches } from "../../lib/rules";
 import { createSettingsList } from "../../lib/SettingsList";
 
-const storage = vendetta.plugin.storage as PluginStorage;
-storage.rules ??= [];
+// Everything that touches the host is deferred into onLoad and guarded, so a
+// module-load throw can never stop the plugin from enabling, and any real error
+// is surfaced as a toast (debug logs aren't readable on this device).
 
-const logger = vendetta.logger;
-const { FluxDispatcher } = vendetta.metro.common;
-const rest = createRest(logger);
+let storage: PluginStorage;
+let rest: ReturnType<typeof createRest> | null = null;
+let unsubscribe: (() => void) | null = null;
+
+function toast(msg: string) {
+  try { vendetta.ui.toasts.showToast(msg); } catch (e) { /* ignore */ }
+}
 
 function onMemberAdd(payload: any) {
-  const guildId = payload?.guildId ?? payload?.guild_id;
-  const userId = payload?.user?.id ?? payload?.member?.user?.id;
-  if (matches(storage.rules, userId, guildId)) {
-    rest.kickMember(guildId, userId);
-  }
+  try {
+    const guildId = (payload && payload.guildId) || (payload && payload.guild_id);
+    const userId =
+      (payload && payload.user && payload.user.id) ||
+      (payload && payload.member && payload.member.user && payload.member.user.id);
+    if (rest && matches(storage.rules, userId, guildId)) {
+      rest.kickMember(guildId, userId);
+    }
+  } catch (e) { /* never let one event break the listener */ }
 }
 
 function sweep() {
   // Attempt a kick for every rule; users not present return 404 (ignored).
-  for (const rule of storage.rules) {
-    rest.kickMember(rule.guildId, rule.userId);
+  const rules = storage.rules || [];
+  for (let i = 0; i < rules.length; i++) {
+    if (rest) rest.kickMember(rules[i].guildId, rules[i].userId);
   }
-  logger.log(`[AutoKick] sweep queued ${storage.rules.length} rule(s)`);
 }
 
 const plugin: VendettaPlugin = {
   onLoad() {
-    sweep();
-    FluxDispatcher.subscribe("GUILD_MEMBER_ADD", onMemberAdd);
-    logger.log("[AutoKick] loaded");
+    try {
+      storage = vendetta.plugin.storage as PluginStorage;
+      if (!storage.rules) storage.rules = [];
+      rest = createRest(vendetta.logger);
+      sweep();
+      const FD = vendetta.metro.common.FluxDispatcher;
+      FD.subscribe("GUILD_MEMBER_ADD", onMemberAdd);
+      unsubscribe = () => FD.unsubscribe("GUILD_MEMBER_ADD", onMemberAdd);
+      toast("AutoKick: enabled (" + (storage.rules.length) + " rule(s))");
+    } catch (e: any) {
+      toast("AutoKick error: " + (e && e.message ? e.message : String(e)));
+    }
   },
   onUnload() {
-    FluxDispatcher.unsubscribe("GUILD_MEMBER_ADD", onMemberAdd);
-    rest.dispose();
-    logger.log("[AutoKick] unloaded");
+    try { if (unsubscribe) unsubscribe(); } catch (e) { /* ignore */ }
+    try { if (rest) rest.dispose(); } catch (e) { /* ignore */ }
+    unsubscribe = null;
   },
-  settings: createSettingsList(storage),
+  settings: createSettingsList(),
 };
 
 export default plugin;

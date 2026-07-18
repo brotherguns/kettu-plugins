@@ -7,11 +7,14 @@ import type { PluginStorage } from "../vendetta";
 // Settings screen for a plugin: two inputs (user ID + server/guild ID) and an
 // "Add rule" button, followed by the current rule list. Tap a rule to remove
 // it. Built only from guaranteed React Native primitives.
-export function createSettingsList(storage: PluginStorage) {
+export function createSettingsList() {
   return function SettingsList() {
     const React = vendetta.metro.common.React;
     const RN = vendetta.metro.common.ReactNative;
     const { ScrollView, View, Text, TextInput, TouchableOpacity } = RN;
+
+    const storage = vendetta.plugin.storage as PluginStorage;
+    if (!storage.rules) storage.rules = [];
 
     const [, forceUpdate] = React.useReducer((x: number) => x + 1, 0);
     const [userId, setUserId] = React.useState("");
