@@ -36,17 +36,23 @@ for (const name of names) {
     jsxFactory: "React.createElement",
     jsxFragment: "React.Fragment",
     external: ["react", "react-native"],
-    target: "esnext",
+    // Kettu runs on Hermes, whose eval parser rejects modern syntax such as
+    // optional-call `?.()`, optional chaining, `??`, and `??=`. Target an older
+    // baseline so esbuild transpiles all of it to compatible ES.
+    target: "es2017",
+    supported: { "optional-chain": false, "nullish-coalescing": false, "logical-assignment": false },
     legalComments: "none",
   });
 
   const cjs = result.outputFiles[0].text;
   // Wrap the CJS module into a self-contained expression. `vendetta` stays a
   // free identifier, resolved from the loader's `vendetta => {...}` param.
+  // NOTE: this wrapper is hand-written and NOT transpiled by esbuild, so it must
+  // itself avoid syntax Hermes rejects (no `??`, no `?.`).
   const iife =
-    "(()=>{var module={exports:{}},exports=module.exports;\n" +
+    "(function(){var module={exports:{}},exports=module.exports;\n" +
     cjs +
-    "\nreturn module.exports.default??module.exports;})()";
+    "\nvar __d=module.exports&&module.exports.default;return __d?__d:module.exports;})()";
 
   const hash = createHash("sha256").update(iife).digest("hex");
 
