@@ -1,13 +1,40 @@
 import type { PluginStorage } from "../vendetta";
+import type { Rule } from "./rules";
 
 // IMPORTANT: nothing here may run at module-load time except pure declarations.
 // A throw at load (e.g. destructuring a missing component) would stop the whole
 // plugin from enabling. So every host lookup happens lazily inside the render.
 
-// Settings screen for a plugin: two inputs (user ID + server/guild ID) and an
-// "Add rule" button, followed by the current rule list. Tap a rule to remove
-// it. Built only from guaranteed React Native primitives.
-export function createSettingsList() {
+export interface TextField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  initial?: string;
+}
+
+export interface ChoiceField {
+  key: string;
+  label: string;
+  choices: Array<{ value: string; label: string }>;
+  initial: string;
+}
+
+export interface SettingsListOptions {
+  // Extra per-rule inputs rendered after the two ID fields.
+  fields?: TextField[];
+  choice?: ChoiceField;
+  // Secondary line shown under each saved rule. Defaults to the server id.
+  describe?: (rule: Rule) => string;
+}
+
+// Settings screen for a plugin: user ID + server/guild ID inputs, any extra
+// per-rule fields the plugin declares, and an "Add rule" button, followed by
+// the current rule list. Tap a rule to remove it. Built only from guaranteed
+// React Native primitives.
+export function createSettingsList(options: SettingsListOptions = {}) {
+  const fields = options.fields || [];
+  const choice = options.choice;
+
   return function SettingsList() {
     const React = vendetta.metro.common.React;
     const RN = vendetta.metro.common.ReactNative;
@@ -20,11 +47,35 @@ export function createSettingsList() {
     const [userId, setUserId] = React.useState("");
     const [guildId, setGuildId] = React.useState("");
 
+    const initialExtras = () => {
+      const seed: Record<string, string> = {};
+      for (let i = 0; i < fields.length; i++) {
+        seed[fields[i].key] = fields[i].initial || "";
+      }
+      if (choice) seed[choice.key] = choice.initial;
+      return seed;
+    };
+    const [extras, setExtras] = React.useState(initialExtras);
+
+    const setExtra = (key: string, value: string) =>
+      setExtras((prev: Record<string, string>) => {
+        const next = { ...prev };
+        next[key] = value;
+        return next;
+      });
+
     const addRule = () => {
       if (!userId.trim() || !guildId.trim()) return;
-      storage.rules.push({ userId: userId.trim(), guildId: guildId.trim() });
+      const rule: any = { userId: userId.trim(), guildId: guildId.trim() };
+      for (let i = 0; i < fields.length; i++) {
+        const key = fields[i].key;
+        rule[key] = (extras[key] || fields[i].initial || "").trim();
+      }
+      if (choice) rule[choice.key] = extras[choice.key] || choice.initial;
+      storage.rules.push(rule);
       setUserId("");
       setGuildId("");
+      setExtras(initialExtras());
       forceUpdate();
     };
 
@@ -32,6 +83,8 @@ export function createSettingsList() {
       storage.rules.splice(index, 1);
       forceUpdate();
     };
+
+    const describe = options.describe || ((rule: Rule) => `Server ${rule.guildId}`);
 
     const input = {
       color: "#fff",
@@ -64,6 +117,49 @@ export function createSettingsList() {
           placeholderTextColor="#6d6f78"
           keyboardType="numeric"
         />
+
+        {choice ? (
+          <View>
+            <Text style={label}>{choice.label}</Text>
+            <View style={{ flexDirection: "row", marginBottom: 10 }}>
+              {choice.choices.map(opt => {
+                const selected = (extras[choice.key] || choice.initial) === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    onPress={() => setExtra(choice.key, opt.value)}
+                    style={{
+                      flex: 1,
+                      backgroundColor: selected ? "#5865f2" : "#1e1f22",
+                      borderRadius: 8,
+                      paddingVertical: 10,
+                      alignItems: "center",
+                      marginRight: 8,
+                    }}
+                  >
+                    <Text style={{ color: selected ? "#fff" : "#b5bac1", fontSize: 14 }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+
+        {fields.map(field => (
+          <View key={field.key}>
+            <Text style={label}>{field.label}</Text>
+            <TextInput
+              style={input}
+              value={extras[field.key] || ""}
+              onChangeText={(v: string) => setExtra(field.key, v)}
+              placeholder={field.placeholder || ""}
+              placeholderTextColor="#6d6f78"
+            />
+          </View>
+        ))}
+
         <TouchableOpacity
           onPress={addRule}
           style={{ backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 16 }}
@@ -85,7 +181,7 @@ export function createSettingsList() {
             >
               <Text style={{ color: "#fff", fontSize: 15 }}>User {rule.userId}</Text>
               <Text style={{ color: "#b5bac1", fontSize: 13 }}>
-                Server {rule.guildId} — tap to remove
+                {describe(rule)} — tap to remove
               </Text>
             </TouchableOpacity>
           ))
