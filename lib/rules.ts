@@ -1,7 +1,9 @@
 export interface Rule {
   userId: string;
-  guildId: string;
-  // AutoTimeout only. Absent on AutoDelete/AutoKick rules, which ignore them.
+  // AutoDelete/AutoKick scope each rule to one guild. AutoTimeout does not:
+  // its rules name a user only and apply wherever the permission exists.
+  guildId?: string;
+  // AutoTimeout only.
   mode?: "fixed" | "random";
   duration?: string;
 }
@@ -20,7 +22,16 @@ export function findRule(rules: Rule[], userId: string, guildId: string): Rule |
   return null;
 }
 
-// Stable identity for a rule, used to key scheduled re-apply timers.
-export function ruleKey(rule: Rule): string {
-  return rule.guildId + ":" + rule.userId;
+// Guild-agnostic lookup, for rules that apply everywhere.
+export function findUserRule(rules: Rule[], userId: string): Rule | null {
+  if (!userId || !rules) return null;
+  for (let i = 0; i < rules.length; i++) {
+    if (rules[i].userId === userId) return rules[i];
+  }
+  return null;
+}
+
+// Stable identity for one (guild, user) pair, used to key re-apply timers.
+export function timerKey(guildId: string, userId: string): string {
+  return guildId + ":" + userId;
 }

@@ -31,7 +31,10 @@ function sweep() {
   // Attempt a kick for every rule; users not present return 404 (ignored).
   const rules = storage.rules || [];
   for (let i = 0; i < rules.length; i++) {
-    if (rest) rest.kickMember(rules[i].guildId, rules[i].userId);
+    // guildId is optional on the shared Rule type (AutoTimeout rules omit it);
+    // an AutoKick rule without one is unusable, so skip it.
+    const guildId = rules[i].guildId;
+    if (rest && guildId) rest.kickMember(guildId, rules[i].userId);
   }
 }
 

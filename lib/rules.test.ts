@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { findRule, matches, ruleKey } from "./rules";
+import { findRule, findUserRule, matches, timerKey } from "./rules";
 
 const rules = [
   { userId: "1", guildId: "100", mode: "fixed" as const, duration: "60s" },
@@ -35,7 +35,15 @@ test("findRule returns null when nothing matches", () => {
   expect(findRule(undefined as any, "1", "100")).toBeNull();
 });
 
-test("ruleKey is stable and distinguishes users within a guild", () => {
-  expect(ruleKey(rules[0])).toBe("100:1");
-  expect(ruleKey(rules[0])).not.toBe(ruleKey(rules[1]));
+test("findUserRule matches regardless of guild", () => {
+  const userOnly = [{ userId: "7", mode: "random" as const }];
+  expect(findUserRule(userOnly, "7")).toEqual(userOnly[0]);
+  expect(findUserRule(userOnly, "8")).toBeNull();
+  expect(findUserRule(undefined as any, "7")).toBeNull();
+});
+
+test("timerKey distinguishes users and guilds", () => {
+  expect(timerKey("100", "1")).toBe("100:1");
+  expect(timerKey("100", "1")).not.toBe(timerKey("200", "1"));
+  expect(timerKey("100", "1")).not.toBe(timerKey("100", "2"));
 });

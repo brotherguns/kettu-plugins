@@ -20,11 +20,20 @@ export interface ChoiceField {
 }
 
 export interface SettingsListOptions {
-  // Extra per-rule inputs rendered after the two ID fields.
+  // Extra per-rule inputs rendered after the ID fields.
   fields?: TextField[];
   choice?: ChoiceField;
   // Secondary line shown under each saved rule. Defaults to the server id.
   describe?: (rule: Rule) => string;
+  // When false the Server ID input is hidden and rules are user-only, for
+  // plugins that resolve their own guild set at runtime.
+  guildField?: boolean;
+  // Called with the new rule right after it is saved, so a plugin can act on
+  // it immediately instead of waiting for the next reload.
+  onAdd?: (rule: Rule) => void;
+  onRemove?: (rule: Rule) => void;
+  // Extra section rendered above the rule form (e.g. the server browser).
+  header?: any;
 }
 
 // Settings screen for a plugin: user ID + server/guild ID inputs, any extra
@@ -34,6 +43,9 @@ export interface SettingsListOptions {
 export function createSettingsList(options: SettingsListOptions = {}) {
   const fields = options.fields || [];
   const choice = options.choice;
+  const wantsGuild = options.guildField !== false;
+  // Captured once so JSX can render it as a component, not call it as a hook.
+  const Header = options.header;
 
   return function SettingsList() {
     const React = vendetta.metro.common.React;
@@ -65,8 +77,10 @@ export function createSettingsList(options: SettingsListOptions = {}) {
       });
 
     const addRule = () => {
-      if (!userId.trim() || !guildId.trim()) return;
-      const rule: any = { userId: userId.trim(), guildId: guildId.trim() };
+      if (!userId.trim()) return;
+      if (wantsGuild && !guildId.trim()) return;
+      const rule: any = { userId: userId.trim() };
+      if (wantsGuild) rule.guildId = guildId.trim();
       for (let i = 0; i < fields.length; i++) {
         const key = fields[i].key;
         rule[key] = (extras[key] || fields[i].initial || "").trim();
@@ -77,11 +91,15 @@ export function createSettingsList(options: SettingsListOptions = {}) {
       setGuildId("");
       setExtras(initialExtras());
       forceUpdate();
+      // After state is reset, so a throw in the handler can't wedge the form.
+      try { if (options.onAdd) options.onAdd(rule); } catch (e) { /* ignore */ }
     };
 
     const removeRule = (index: number) => {
+      const rule = storage.rules[index];
       storage.rules.splice(index, 1);
       forceUpdate();
+      try { if (options.onRemove) options.onRemove(rule); } catch (e) { /* ignore */ }
     };
 
     const describe = options.describe || ((rule: Rule) => `Server ${rule.guildId}`);
@@ -99,6 +117,12 @@ export function createSettingsList(options: SettingsListOptions = {}) {
 
     return (
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+        {options.header ? (
+          <View style={{ marginBottom: 16 }}>
+            <Header />
+          </View>
+        ) : null}
+
         <Text style={label}>User ID</Text>
         <TextInput
           style={input}
@@ -108,15 +132,19 @@ export function createSettingsList(options: SettingsListOptions = {}) {
           placeholderTextColor="#6d6f78"
           keyboardType="numeric"
         />
-        <Text style={label}>Server (Guild) ID</Text>
-        <TextInput
-          style={input}
-          value={guildId}
-          onChangeText={setGuildId}
-          placeholder="e.g. 1368145952266911755"
-          placeholderTextColor="#6d6f78"
-          keyboardType="numeric"
-        />
+        {wantsGuild ? (
+          <View>
+            <Text style={label}>Server (Guild) ID</Text>
+            <TextInput
+              style={input}
+              value={guildId}
+              onChangeText={setGuildId}
+              placeholder="e.g. 1368145952266911755"
+              placeholderTextColor="#6d6f78"
+              keyboardType="numeric"
+            />
+          </View>
+        ) : null}
 
         {choice ? (
           <View>
@@ -171,7 +199,11 @@ export function createSettingsList(options: SettingsListOptions = {}) {
           Rules ({storage.rules.length})
         </Text>
         {storage.rules.length === 0 ? (
-          <Text style={{ color: "#6d6f78" }}>No rules yet. Add a User ID + Server ID above.</Text>
+          <Text style={{ color: "#6d6f78" }}>
+            {wantsGuild
+              ? "No rules yet. Add a User ID + Server ID above."
+              : "No rules yet. Add a User ID above."}
+          </Text>
         ) : (
           storage.rules.map((rule, i) => (
             <TouchableOpacity

@@ -1,7 +1,16 @@
 import type * as React from "react";
 
-export interface Rule { userId: string; guildId: string; }
-export interface PluginStorage { rules: Rule[]; }
+export interface Rule {
+  userId: string;
+  guildId?: string;
+  mode?: "fixed" | "random";
+  duration?: string;
+}
+export interface PluginStorage {
+  rules: Rule[];
+  // AutoTimeout: servers switched OFF in the server browser (opt-out set).
+  excluded?: Record<string, boolean>;
+}
 
 export interface FluxDispatcher {
   subscribe(type: string, cb: (payload: any) => void): void;
