@@ -43,6 +43,21 @@ function excluded(): Record<string, boolean> {
   return s.excluded;
 }
 
+// The guild helper, usable from settings before onLoad has run.
+function currentGuilds() {
+  if (guilds) return guilds;
+  const p = perms || createPermissions(vendetta.logger);
+  return createGuilds(vendetta.logger, id => p.canTimeout(id));
+}
+
+// How many permitted servers are currently switched on, out of the total.
+function serverCounts(): { on: number; total: number } {
+  const all = currentGuilds().moderatable();
+  let on = 0;
+  for (let i = 0; i < all.length; i++) if (!isExcluded(all[i])) on++;
+  return { on: on, total: all.length };
+}
+
 // Settings can render before onLoad has run, so never assume `storage` is set.
 function currentRules(): Rule[] {
   const s = storage || (vendetta.plugin.storage as PluginStorage);
@@ -195,10 +210,7 @@ const plugin: VendettaPlugin = {
   settings: createSettingsList({
     guildField: false,
     header: createGuildBrowser({
-      // Resolved lazily so the browser works even before onLoad has run.
-      list: () =>
-        (guilds || createGuilds(vendetta.logger, id =>
-          (perms || createPermissions(vendetta.logger)).canTimeout(id))).list(),
+      list: () => currentGuilds().list(),
       isExcluded,
       setExcluded,
     }),
@@ -219,10 +231,13 @@ const plugin: VendettaPlugin = {
         initial: "60s",
       },
     ],
-    describe: (rule: Rule) =>
-      rule.mode === "random"
-        ? "Random 1s–28d, every enabled server"
-        : (rule.duration || "60s") + ", every enabled server",
+    describe: (rule: Rule) => {
+      const c = serverCounts();
+      const dur = rule.mode === "random" ? "Random 1s–28d" : rule.duration || "60s";
+      const where =
+        c.on === c.total ? `all ${c.total} servers` : `${c.on} of ${c.total} servers`;
+      return dur + " · " + where;
+    },
     onAdd: onRuleAdded,
     onRemove: onRuleRemoved,
   }),

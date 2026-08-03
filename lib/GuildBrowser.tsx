@@ -24,7 +24,7 @@ export function createGuildBrowser(options: GuildBrowserOptions) {
   return function GuildBrowser() {
     const React = vendetta.metro.common.React;
     const RN = vendetta.metro.common.ReactNative;
-    const { View, Text, TouchableOpacity, Image, TextInput } = RN;
+    const { View, Text, TouchableOpacity, Image, TextInput, ScrollView } = RN;
 
     const [, forceUpdate] = React.useReducer((x: number) => x + 1, 0);
     const [query, setQuery] = React.useState("");
@@ -92,6 +92,13 @@ export function createGuildBrowser(options: GuildBrowserOptions) {
           />
         ) : null}
 
+        {/* Capped and internally scrollable: an expanded list must not push the
+            rule form down under the on-screen keyboard. */}
+        <ScrollView
+          style={{ maxHeight: 260 }}
+          nestedScrollEnabled={true}
+          keyboardShouldPersistTaps="handled"
+        >
         {shown.map(g => {
           const on = !options.isExcluded(g.id);
           return (
@@ -150,6 +157,7 @@ export function createGuildBrowser(options: GuildBrowserOptions) {
             </TouchableOpacity>
           );
         })}
+        </ScrollView>
 
         {shown.length === 0 ? (
           <Text style={{ color: "#6d6f78", marginBottom: 8 }}>No servers match.</Text>

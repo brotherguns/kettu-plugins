@@ -116,7 +116,17 @@ export function createSettingsList(options: SettingsListOptions = {}) {
     const label = { color: "#b5bac1", fontSize: 13, marginBottom: 4 } as const;
 
     return (
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+      // The on-screen keyboard covers the lower half of the sheet, so the
+      // scroll area gets a keyboard inset plus enough trailing padding that any
+      // field can be scrolled clear of it. keyboardShouldPersistTaps keeps the
+      // first tap on "Add rule" working while an input still has focus.
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 400 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={true}
+      >
         {options.header ? (
           <View style={{ marginBottom: 16 }}>
             <Header />
