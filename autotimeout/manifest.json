@@ -1,6 +1,6 @@
 {
   "name": "AutoTimeout",
-  "description": "Keeps blacklisted users timed out — re-applies instantly when a timeout is lifted or expires, for a fixed or random duration (requires Moderate Members).",
+  "description": "Times listed users out every time they send a message, for a fixed or random duration, in any server where you can moderate (requires Moderate Members).",
   "authors": [
     {
       "name": "brotherguns",
