@@ -11,7 +11,6 @@ export interface GuildSummary {
 // at runtime rather than configured.
 export function createGuilds(logger: Logger, canTimeout: (guildId: string) => boolean) {
   const GuildStore = vendetta.metro.findByProps("getGuild", "getGuilds");
-  const GuildMemberStore = vendetta.metro.findByProps("getMember", "getMembers");
 
   return {
     // Guild ids where we hold the permission. Empty on lookup failure, which
@@ -42,19 +41,5 @@ export function createGuilds(logger: Logger, canTimeout: (guildId: string) => bo
       }
     },
 
-    // Whether the target is known to be in the guild. Unknown (uncached member
-    // list) counts as true: the PATCH then 404s harmlessly rather than the
-    // plugin silently skipping someone who is actually present.
-    maybeMember(guildId: string, userId: string): boolean {
-      try {
-        if (!GuildMemberStore) return true;
-        if (typeof GuildMemberStore.isMember === "function") {
-          return !!GuildMemberStore.isMember(guildId, userId);
-        }
-        return true;
-      } catch (e) {
-        return true;
-      }
-    },
   };
 }

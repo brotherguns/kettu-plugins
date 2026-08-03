@@ -30,8 +30,6 @@ export interface SettingsListOptions {
   guildField?: boolean;
   // Called with the new rule right after it is saved, so a plugin can act on
   // it immediately instead of waiting for the next reload.
-  onAdd?: (rule: Rule) => void;
-  onRemove?: (rule: Rule) => void;
   // Extra section rendered above the rule form (e.g. the server browser).
   header?: any;
 }
@@ -91,15 +89,11 @@ export function createSettingsList(options: SettingsListOptions = {}) {
       setGuildId("");
       setExtras(initialExtras());
       forceUpdate();
-      // After state is reset, so a throw in the handler can't wedge the form.
-      try { if (options.onAdd) options.onAdd(rule); } catch (e) { /* ignore */ }
     };
 
     const removeRule = (index: number) => {
-      const rule = storage.rules[index];
       storage.rules.splice(index, 1);
       forceUpdate();
-      try { if (options.onRemove) options.onRemove(rule); } catch (e) { /* ignore */ }
     };
 
     const describe = options.describe || ((rule: Rule) => `Server ${rule.guildId}`);
