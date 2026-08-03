@@ -1,0 +1,12 @@
+{
+  "name": "AutoTimeout",
+  "description": "Keeps blacklisted users timed out — re-applies instantly when a timeout is lifted or expires, for a fixed or random duration (requires Moderate Members).",
+  "authors": [
+    {
+      "name": "brotherguns",
+      "id": "877502759404974110"
+    }
+  ],
+  "main": "index.js",
+  "hash": "e4e4591158285e06762b66ffe729d8222b81d6f6a1dea6f653b767c085e3f148"
+}
