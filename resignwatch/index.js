@@ -191,13 +191,17 @@ function collectText(msg) {
 function extract(msg) {
   const inter = msg.interaction;
   const name = inter && inter.name;
+  const idata = msg.interactionData;
+  const dataName = idata && idata.name;
   const text = collectText(msg);
   let isResign = false;
-  if (name === "resign")
+  if (name === "resign" || name === "encrypt" || name === "decrypt")
     isResign = true;
-  if (/\/resign\b/i.test(text))
+  if (dataName === "resign" || dataName === "encrypt" || dataName === "decrypt")
     isResign = true;
-  if (/resign(?:ed|ing)?\s+to\s+/i.test(text))
+  if (/\/(?:resign|encrypt|decrypt)\b/i.test(text))
+    isResign = true;
+  if (/(?:resign|encrypt)(?:ed|ing)?\s+to\s+/i.test(text))
     isResign = true;
   if (!isResign)
     return null;
@@ -207,13 +211,25 @@ function extract(msg) {
   if (!personId)
     return null;
   let psn = null;
-  let mt = /playstation[\s_]?id\s*[:=]\s*([A-Za-z0-9_.-]+)/i.exec(text);
-  if (!mt)
-    mt = /resign(?:ed|ing)?\s+to\s+\*\*([A-Za-z0-9_.-]+)\*\*/i.exec(text);
-  if (!mt)
-    mt = /resign(?:ed|ing)?\s+to\s+([A-Za-z0-9_.-]+)/i.exec(text);
-  if (mt)
-    psn = mt[1];
+  const opts = idata && idata.options;
+  for (let i = 0; i < (opts ? opts.length : 0); i++) {
+    const o = opts[i];
+    if (o && /playstation[\s_]?id/i.test(String(o.name || "")) && o.value != null) {
+      psn = String(o.value);
+      break;
+    }
+  }
+  if (!psn) {
+    let mt = /playstation[\s_]?id\s*[:=]\s*([A-Za-z0-9_.-]+)/i.exec(text);
+    if (!mt)
+      mt = /(?:resign|encrypt)(?:ed|ing)?\s+to\s+\*\*([A-Za-z0-9_.-]+)\*\*/i.exec(text);
+    if (!mt)
+      mt = /(?:resign|encrypt)(?:ed|ing)?\s+to\s+([A-Za-z0-9_.-]+)/i.exec(text);
+    if (mt)
+      psn = mt[1];
+  }
+  if (psn)
+    psn = psn.trim();
   if (!psn)
     return null;
   return { personId, psn };
@@ -344,13 +360,24 @@ function runSim(ctx) {
     guild_id: DEFAULT_GUILD_ID,
     content: "",
     author: { id: "892458481590865920", bot: false },
+    interaction: { name: "resign", user: { id: "892458481590865920" } },
     embeds: [{
       title: "Resigning process (Encrypted): Successful",
       description: "**sce_sdmemory** resigned to **" + psn + "** (batch 1/1)."
     }]
   });
+  const mkEncrypt = (channelId, psn) => ({
+    id: Math.random().toString(36).slice(2),
+    channel_id: channelId,
+    guild_id: DEFAULT_GUILD_ID,
+    content: "",
+    author: { id: "1132016483099234364", bot: true },
+    interaction: { name: "encrypt", user: { id: "892458481590865920" } },
+    interactionData: { name: "encrypt", options: [{ type: 3, name: "playstation_id", value: psn }] }
+  });
   fd.dispatch("MESSAGE_CREATE", { message: mkMsg("1541533554712772729", "Tikr3r_b") });
   fd.dispatch("MESSAGE_CREATE", { message: mkMsg("1541533554712772729", "Other_psn") });
+  fd.dispatch("MESSAGE_CREATE", { message: mkEncrypt("1541533554712772729", "Third_psn") });
   return new Promise((resolve) => {
     setTimeout(() => {
       const c = cfg();
