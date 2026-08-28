@@ -1,0 +1,404 @@
+(function(){var module={exports:{}},exports=module.exports;
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// plugins/resignwatch/index.tsx
+var resignwatch_exports = {};
+__export(resignwatch_exports, {
+  default: () => resignwatch_default
+});
+module.exports = __toCommonJS(resignwatch_exports);
+
+// lib/queue.ts
+function createQueue(opts = {}) {
+  var _a, _b;
+  const delayMs = (_a = opts.delayMs) != null ? _a : 750;
+  const onError = (_b = opts.onError) != null ? _b : () => {
+  };
+  let pending = [];
+  let running = false;
+  function scheduleNext() {
+    if (pending.length && delayMs > 0) {
+      setTimeout(runNext, delayMs);
+    } else {
+      runNext();
+    }
+  }
+  function runNext() {
+    if (!pending.length) {
+      running = false;
+      return;
+    }
+    const task = pending.shift();
+    let p;
+    try {
+      p = Promise.resolve(task());
+    } catch (e) {
+      onError(e);
+      p = Promise.resolve();
+    }
+    p.then(scheduleNext, (e) => {
+      onError(e);
+      scheduleNext();
+    });
+  }
+  function drain() {
+    if (running)
+      return;
+    running = true;
+    runNext();
+  }
+  return {
+    push(task) {
+      pending.push(task);
+      drain();
+    },
+    clear() {
+      pending = [];
+    },
+    size() {
+      return pending.length;
+    }
+  };
+}
+
+// lib/rest.ts
+function createRest(logger) {
+  var _a;
+  const RestAPI = (_a = vendetta.metro.findByProps("getAPIBaseURL", "del")) != null ? _a : vendetta.metro.findByProps("getAPIBaseURL");
+  const queue = createQueue({
+    delayMs: 750,
+    onError: (e) => logger.error("[kettu-mod] REST action failed:", e)
+  });
+  function request(verb, url, label, body) {
+    queue.push(() => {
+      logger.log(`[kettu-mod] ${label} -> ${url}`);
+      const opts = { url };
+      if (body !== void 0)
+        opts.body = body;
+      return RestAPI[verb](opts);
+    });
+  }
+  return {
+    sendMessage(channelId, content) {
+      request("post", `/channels/${channelId}/messages`, "sendMessage", { content });
+    },
+    deleteMessage(channelId, messageId) {
+      request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");
+    },
+    kickMember(guildId, userId) {
+      request("del", `/guilds/${guildId}/members/${userId}`, "kickMember");
+    },
+    // `untilISO` is an ISO-8601 timestamp at most 28 days out; null lifts the
+    // timeout. Requires Moderate Members in the guild.
+    timeoutMember(guildId, userId, untilISO) {
+      request(
+        "patch",
+        `/guilds/${guildId}/members/${userId}`,
+        `timeoutMember(${untilISO})`,
+        { communication_disabled_until: untilISO }
+      );
+    },
+    dispose() {
+      queue.clear();
+    }
+  };
+}
+
+// plugins/resignwatch/index.tsx
+var DEFAULT_GUILD_ID = "1130158543237030049";
+var DEFAULT_FORUM_ID = "1146892703028760696";
+var DEFAULT_ALERT_COUNT = 3;
+var MAX_PSNS_PER_PERSON = 8;
+var rest = null;
+var subscriptions = [];
+function toast(msg) {
+  try {
+    vendetta.ui.toasts.showToast(msg);
+  } catch (e) {
+  }
+}
+function cfg() {
+  const s = vendetta.plugin.storage;
+  if (!s.resignWatch)
+    s.resignWatch = {};
+  const c = s.resignWatch;
+  if (c.guildId === void 0)
+    c.guildId = DEFAULT_GUILD_ID;
+  if (c.forumId === void 0)
+    c.forumId = DEFAULT_FORUM_ID;
+  if (c.alertCount === void 0)
+    c.alertCount = DEFAULT_ALERT_COUNT;
+  if (c.alertChannelId === void 0)
+    c.alertChannelId = "";
+  if (!c.psns)
+    c.psns = {};
+  if (!c.alerts)
+    c.alerts = {};
+  return c;
+}
+function isInForum(msg) {
+  try {
+    const c = cfg();
+    if (msg.guild_id && msg.guild_id !== c.guildId)
+      return false;
+    if (msg.channel_id === c.forumId)
+      return true;
+    const ChannelStore = vendetta.metro.findByProps("getChannel", "getChannels");
+    const ch = ChannelStore && ChannelStore.getChannel(msg.channel_id);
+    if (ch && ch.parent_id === c.forumId)
+      return true;
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+function collectText(msg) {
+  let t = msg.content || "";
+  const embeds = msg.embeds;
+  for (let i = 0; i < (embeds ? embeds.length : 0); i++) {
+    const e = embeds[i];
+    if (e.title)
+      t += "\n" + e.title;
+    if (e.description)
+      t += "\n" + e.description;
+    const f = e.fields;
+    for (let j = 0; j < (f ? f.length : 0); j++) {
+      if (f[j].name)
+        t += "\n" + f[j].name;
+      if (f[j].value)
+        t += "\n" + String(f[j].value);
+    }
+  }
+  return t;
+}
+function extract(msg) {
+  const inter = msg.interaction;
+  const name = inter && inter.name;
+  const text = collectText(msg);
+  let isResign = false;
+  if (name === "resign")
+    isResign = true;
+  if (/\/resign\b/i.test(text))
+    isResign = true;
+  if (/resign(?:ed|ing)?\s+to\s+/i.test(text))
+    isResign = true;
+  if (!isResign)
+    return null;
+  let personId = inter && inter.user && inter.user.id;
+  if (!personId && msg.author && !msg.author.bot)
+    personId = msg.author.id;
+  if (!personId)
+    return null;
+  let psn = null;
+  let mt = /playstation[\s_]?id\s*[:=]\s*([A-Za-z0-9_.-]+)/i.exec(text);
+  if (!mt)
+    mt = /resign(?:ed|ing)?\s+to\s+\*\*([A-Za-z0-9_.-]+)\*\*/i.exec(text);
+  if (!mt)
+    mt = /resign(?:ed|ing)?\s+to\s+([A-Za-z0-9_.-]+)/i.exec(text);
+  if (mt)
+    psn = mt[1];
+  if (!psn)
+    return null;
+  return { personId, psn };
+}
+function onMessage(payload) {
+  if (!rest)
+    return;
+  try {
+    const c = cfg();
+    if (c.enabled === false)
+      return;
+    const msg = payload && payload.message;
+    if (!msg || !msg.id)
+      return;
+    if (!isInForum(msg))
+      return;
+    const parsed = extract(msg);
+    if (!parsed)
+      return;
+    const personId = parsed.personId;
+    const psn = parsed.psn.toLowerCase();
+    if (!c.psns[personId])
+      c.psns[personId] = [];
+    const list = c.psns[personId];
+    let known = false;
+    for (let i = 0; i < list.length; i++) {
+      if (String(list[i]).toLowerCase() === psn) {
+        known = true;
+        break;
+      }
+    }
+    if (!known) {
+      list.push(psn);
+      if (list.length > MAX_PSNS_PER_PERSON)
+        list.splice(0, list.length - MAX_PSNS_PER_PERSON);
+    }
+    const key = personId + ":" + psn;
+    if (c.alerts[key])
+      return;
+    c.alerts[key] = true;
+    if (list.length < 2)
+      return;
+    fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id);
+  } catch (e) {
+  }
+}
+function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
+  try {
+    const c = cfg();
+    const target = c.alertChannelId || srcChannelId;
+    const link = "https://discord.com/channels/" + c.guildId + "/" + srcChannelId;
+    const n = Math.max(1, Math.floor(Number(c.alertCount) || DEFAULT_ALERT_COUNT));
+    const line = "\u{1F6A8} <@" + personId + "> is resigning to a different PSN!\n" + oldPsn + " -> " + newPsn + "\n" + link;
+    for (let i = 0; i < n; i++)
+      rest.sendMessage(target, line);
+    toast("ResignWatch: flagged " + newPsn);
+  } catch (e) {
+  }
+}
+function Settings() {
+  var _a;
+  const React = vendetta.metro.common.React;
+  const RN = vendetta.metro.common.ReactNative;
+  const { ScrollView, View, Text, TextInput, TouchableOpacity, Switch } = RN;
+  const c = cfg();
+  const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+  const [guildId, setGuildId] = React.useState(c.guildId || "");
+  const [forumId, setForumId] = React.useState(c.forumId || "");
+  const [alertChannel, setAlertChannel] = React.useState(c.alertChannelId || "");
+  const [alertCount, setAlertCount] = React.useState(String((_a = c.alertCount) != null ? _a : DEFAULT_ALERT_COUNT));
+  const [enabled, setEnabled] = React.useState(c.enabled !== false);
+  const save = () => {
+    c.guildId = guildId.trim();
+    c.forumId = forumId.trim();
+    c.alertChannelId = alertChannel.trim();
+    c.alertCount = Math.max(1, Math.floor(Number(alertCount) || DEFAULT_ALERT_COUNT));
+    c.enabled = enabled;
+    forceUpdate();
+    toast("ResignWatch settings saved");
+  };
+  const resetTracking = () => {
+    c.psns = {};
+    c.alerts = {};
+    forceUpdate();
+    toast("ResignWatch: tracking cleared");
+  };
+  const personCount = c.psns ? Object.keys(c.psns).length : 0;
+  const alertCountTotal = c.alerts ? Object.keys(c.alerts).length : 0;
+  const style = {
+    color: "#fff",
+    backgroundColor: "#1e1f22",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    fontSize: 16
+  };
+  const label = { color: "#b5bac1", fontSize: 13, marginBottom: 4 };
+  const row = { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 };
+  return /* @__PURE__ */ React.createElement(
+    ScrollView,
+    {
+      style: { flex: 1 },
+      contentContainerStyle: { padding: 16, paddingBottom: 400 },
+      keyboardShouldPersistTaps: "handled",
+      keyboardDismissMode: "interactive",
+      automaticallyAdjustKeyboardInsets: true
+    },
+    /* @__PURE__ */ React.createElement(View, { style: row }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "600" } }, "Enabled"), /* @__PURE__ */ React.createElement(Switch, { value: enabled, onValueChange: setEnabled })),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "Server (Guild) ID"),
+    /* @__PURE__ */ React.createElement(TextInput, { style, value: guildId, onChangeText: setGuildId, keyboardType: "numeric", placeholder: DEFAULT_GUILD_ID, placeholderTextColor: "#6d6f78" }),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "Forum (or thread) to watch"),
+    /* @__PURE__ */ React.createElement(TextInput, { style, value: forumId, onChangeText: setForumId, keyboardType: "numeric", placeholder: DEFAULT_FORUM_ID, placeholderTextColor: "#6d6f78" }),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "Alert channel ID (blank = same thread it happened in)"),
+    /* @__PURE__ */ React.createElement(TextInput, { style, value: alertChannel, onChangeText: setAlertChannel, keyboardType: "numeric", placeholder: "leave blank", placeholderTextColor: "#6d6f78" }),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "How many alert messages"),
+    /* @__PURE__ */ React.createElement(TextInput, { style, value: alertCount, onChangeText: setAlertCount, keyboardType: "numeric", placeholder: "3", placeholderTextColor: "#6d6f78" }),
+    /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: save, style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 10 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Save")),
+    /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: resetTracking, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, alignItems: "center" } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#f23f43", fontWeight: "600", fontSize: 15 } }, "Clear tracking")),
+    /* @__PURE__ */ React.createElement(View, { style: { marginTop: 18 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 6 } }, "Tracked: ", personCount, " person(s), ", alertCountTotal, " alert(s) fired"), Object.keys(c.psns || {}).map((id) => /* @__PURE__ */ React.createElement(View, { key: id, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 15 } }, "<@" + id + ">"), /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13 } }, (c.psns[id] || []).join(" \xB7 ")))))
+  );
+}
+function runSim(ctx) {
+  const fd = vendetta.metro.common.FluxDispatcher;
+  const mkMsg = (channelId, psn) => ({
+    id: Math.random().toString(36).slice(2),
+    channel_id: channelId,
+    guild_id: DEFAULT_GUILD_ID,
+    content: "",
+    author: { id: "892458481590865920", bot: false },
+    embeds: [{
+      title: "Resigning process (Encrypted): Successful",
+      description: "**sce_sdmemory** resigned to **" + psn + "** (batch 1/1)."
+    }]
+  });
+  fd.dispatch("MESSAGE_CREATE", { message: mkMsg("1541533554712772729", "Tikr3r_b") });
+  fd.dispatch("MESSAGE_CREATE", { message: mkMsg("1541533554712772729", "Other_psn") });
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const c = cfg();
+      resolve({
+        psns: c.psns,
+        alerts: Object.keys(c.alerts || {}).length,
+        sent: (ctx.vendetta._sent || []).map((o) => o.body && o.body.content)
+      });
+    }, 3500);
+  });
+}
+var plugin = {
+  onLoad() {
+    try {
+      storageReady();
+      rest = createRest(vendetta.logger);
+      const FD = vendetta.metro.common.FluxDispatcher;
+      subscriptions = [];
+      FD.subscribe("MESSAGE_CREATE", onMessage);
+      subscriptions.push(() => FD.unsubscribe("MESSAGE_CREATE", onMessage));
+      FD.subscribe("MESSAGE_UPDATE", onMessage);
+      subscriptions.push(() => FD.unsubscribe("MESSAGE_UPDATE", onMessage));
+      toast("ResignWatch: watching " + cfg().forumId);
+    } catch (e) {
+      toast("ResignWatch error: " + (e && e.message ? e.message : String(e)));
+    }
+  },
+  onUnload() {
+    try {
+      for (let i = 0; i < subscriptions.length; i++)
+        subscriptions[i]();
+    } catch (e) {
+    }
+    subscriptions = [];
+    try {
+      if (rest)
+        rest.dispose();
+    } catch (e) {
+    }
+    rest = null;
+  },
+  settings: Settings,
+  // exposed for scripts/simulate.mjs only — never touched by the loader
+  resignwatch: runSim
+};
+function storageReady() {
+  cfg();
+}
+var resignwatch_default = plugin;
+
+var __d=module.exports&&module.exports.default;return __d?__d:module.exports;})()

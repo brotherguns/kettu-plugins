@@ -1,0 +1,12 @@
+{
+  "name": "ResignWatch",
+  "description": "Watches the free save-bot forum and flags anyone resigning to more than one PSN (spams 3 alert messages naming the person and linking their thread).",
+  "authors": [
+    {
+      "name": "brotherguns",
+      "id": "877502759404974110"
+    }
+  ],
+  "main": "index.js",
+  "hash": "d3533b8a60d478a40c0c7c9ae408bea98879e2fda07c237344dc4438d8d27dbb"
+}
