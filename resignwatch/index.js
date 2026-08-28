@@ -95,10 +95,19 @@ function createRest(logger) {
       return RestAPI[verb](opts);
     });
   }
+  function getCommandData(channelId, messageId) {
+    const url = `/channels/${channelId}/messages/${messageId}/interaction-data`;
+    const p = RestAPI.get({ url }).then((body) => body && body.body !== void 0 ? body.body : body);
+    return p.catch((e) => {
+      logger.error("[kettu-mod] interaction-data failed:", e);
+      return null;
+    });
+  }
   return {
     sendMessage(channelId, content) {
       request("post", `/channels/${channelId}/messages`, "sendMessage", { content });
     },
+    getCommandData,
     deleteMessage(channelId, messageId) {
       request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");
     },
@@ -188,52 +197,40 @@ function collectText(msg) {
   }
   return t;
 }
-function extract(msg) {
+function classify(msg) {
   const inter = msg.interaction;
   const name = inter && inter.name;
-  const idata = msg.interactionData;
-  const dataName = idata && idata.name;
   const text = collectText(msg);
-  let isResign = false;
+  let cmdName = null;
   if (name === "resign" || name === "encrypt" || name === "decrypt")
-    isResign = true;
-  if (dataName === "resign" || dataName === "encrypt" || dataName === "decrypt")
-    isResign = true;
-  if (/\/(?:resign|encrypt|decrypt)\b/i.test(text))
-    isResign = true;
-  if (/(?:resign|encrypt)(?:ed|ing)?\s+to\s+/i.test(text))
-    isResign = true;
-  if (!isResign)
+    cmdName = name;
+  if (!cmdName) {
+    let mt = /\/(resign|encrypt|decrypt)\b/i.exec(text);
+    if (mt)
+      cmdName = mt[1].toLowerCase();
+  }
+  if (!cmdName && /(?:resign|encrypt)(?:ed|ing)?\s+to\s+/i.test(text))
+    cmdName = name || "resign";
+  if (!cmdName)
     return null;
   let personId = inter && inter.user && inter.user.id;
   if (!personId && msg.author && !msg.author.bot)
     personId = msg.author.id;
   if (!personId)
     return null;
-  let psn = null;
-  const opts = idata && idata.options;
-  for (let i = 0; i < (opts ? opts.length : 0); i++) {
-    const o = opts[i];
-    if (o && /playstation[\s_]?id/i.test(String(o.name || "")) && o.value != null) {
-      psn = String(o.value);
-      break;
-    }
-  }
-  if (!psn) {
-    let mt = /playstation[\s_]?id\s*[:=]\s*([A-Za-z0-9_.-]+)/i.exec(text);
-    if (!mt)
-      mt = /(?:resign|encrypt)(?:ed|ing)?\s+to\s+\*\*([A-Za-z0-9_.-]+)\*\*/i.exec(text);
-    if (!mt)
-      mt = /(?:resign|encrypt)(?:ed|ing)?\s+to\s+([A-Za-z0-9_.-]+)/i.exec(text);
-    if (mt)
-      psn = mt[1];
-  }
-  if (psn)
-    psn = psn.trim();
-  if (!psn)
-    return null;
-  return { personId, psn };
+  return { personId, cmdName, text };
 }
+function psnFromText(text) {
+  let mt = /playstation[\s_]?id\s*[:=]\s*([A-Za-z0-9_.-]+)/i.exec(text);
+  if (!mt)
+    mt = /(?:resign|encrypt)(?:ed|ing)?\s+to\s+\*\*([A-Za-z0-9_.-]+)\*\*/i.exec(text);
+  if (!mt)
+    mt = /(?:resign|encrypt)(?:ed|ing)?\s+to\s+([A-Za-z0-9_.-]+)/i.exec(text);
+  if (mt)
+    return mt[1];
+  return null;
+}
+var seenInteractions = {};
 function onMessage(payload) {
   if (!rest)
     return;
@@ -246,33 +243,66 @@ function onMessage(payload) {
       return;
     if (!isInForum(msg))
       return;
-    const parsed = extract(msg);
+    const parsed = classify(msg);
     if (!parsed)
       return;
-    const personId = parsed.personId;
-    const psn = parsed.psn.toLowerCase();
-    if (!c.psns[personId])
-      c.psns[personId] = [];
-    const list = c.psns[personId];
-    let known = false;
-    for (let i = 0; i < list.length; i++) {
-      if (String(list[i]).toLowerCase() === psn) {
-        known = true;
-        break;
+    const iid = msg.interaction && msg.interaction.id;
+    if (iid && seenInteractions[iid])
+      return;
+    if (iid) {
+      seenInteractions[iid] = true;
+      if (Object.keys(seenInteractions).length > 500) {
+        for (const k in seenInteractions) {
+          delete seenInteractions[k];
+          break;
+        }
       }
     }
-    if (!known) {
-      list.push(psn);
-      if (list.length > MAX_PSNS_PER_PERSON)
-        list.splice(0, list.length - MAX_PSNS_PER_PERSON);
+    const record = (rawPsn) => {
+      const psn = rawPsn ? rawPsn.trim().toLowerCase() : null;
+      if (!psn)
+        return;
+      const personId = parsed.personId;
+      if (!c.psns[personId])
+        c.psns[personId] = [];
+      const list = c.psns[personId];
+      let known = false;
+      for (let i = 0; i < list.length; i++) {
+        if (String(list[i]).toLowerCase() === psn) {
+          known = true;
+          break;
+        }
+      }
+      if (!known) {
+        list.push(psn);
+        if (list.length > MAX_PSNS_PER_PERSON)
+          list.splice(0, list.length - MAX_PSNS_PER_PERSON);
+      }
+      const key = personId + ":" + psn;
+      if (c.alerts[key])
+        return;
+      c.alerts[key] = true;
+      if (list.length < 2)
+        return;
+      fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id);
+    };
+    if (iid && msg.id) {
+      rest.getCommandData(msg.channel_id, msg.id).then((body) => {
+        let optPsn = null;
+        if (body && body.options) {
+          for (let i = 0; i < body.options.length; i++) {
+            const o = body.options[i];
+            if (o && /playstation[\s_]?id/i.test(String(o.name || "")) && o.value != null) {
+              optPsn = String(o.value);
+              break;
+            }
+          }
+        }
+        record(optPsn || psnFromText(parsed.text));
+      });
+    } else {
+      record(psnFromText(parsed.text));
     }
-    const key = personId + ":" + psn;
-    if (c.alerts[key])
-      return;
-    c.alerts[key] = true;
-    if (list.length < 2)
-      return;
-    fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id);
   } catch (e) {
   }
 }
@@ -354,30 +384,27 @@ function Settings() {
 }
 function runSim(ctx) {
   const fd = vendetta.metro.common.FluxDispatcher;
-  const mkMsg = (channelId, psn) => ({
-    id: Math.random().toString(36).slice(2),
-    channel_id: channelId,
-    guild_id: DEFAULT_GUILD_ID,
-    content: "",
-    author: { id: "892458481590865920", bot: false },
-    interaction: { name: "resign", user: { id: "892458481590865920" } },
-    embeds: [{
-      title: "Resigning process (Encrypted): Successful",
-      description: "**sce_sdmemory** resigned to **" + psn + "** (batch 1/1)."
-    }]
-  });
-  const mkEncrypt = (channelId, psn) => ({
-    id: Math.random().toString(36).slice(2),
-    channel_id: channelId,
+  const mkMsg = (mid, iid, psn) => ({
+    id: mid,
+    channel_id: "1541533554712772729",
     guild_id: DEFAULT_GUILD_ID,
     content: "",
     author: { id: "1132016483099234364", bot: true },
-    interaction: { name: "encrypt", user: { id: "892458481590865920" } },
-    interactionData: { name: "encrypt", options: [{ type: 3, name: "playstation_id", value: psn }] }
+    interaction: { id: iid, name: "resign", user: { id: "892458481590865920" } },
+    interactionMetadata: { id: iid, name: "resign", user: { id: "892458481590865920" } }
   });
-  fd.dispatch("MESSAGE_CREATE", { message: mkMsg("1541533554712772729", "Tikr3r_b") });
-  fd.dispatch("MESSAGE_CREATE", { message: mkMsg("1541533554712772729", "Other_psn") });
-  fd.dispatch("MESSAGE_CREATE", { message: mkEncrypt("1541533554712772729", "Third_psn") });
+  const mkEncrypt = (mid, iid) => ({
+    id: mid,
+    channel_id: "1541533554712772729",
+    guild_id: DEFAULT_GUILD_ID,
+    content: "",
+    author: { id: "1132016483099234364", bot: true },
+    interaction: { id: iid, name: "encrypt", user: { id: "892458481590865920" } },
+    interactionMetadata: { id: iid, name: "encrypt", user: { id: "892458481590865920" } }
+  });
+  fd.dispatch("MESSAGE_CREATE", { message: mkMsg("sim-msg-1", "sim-int-1", "Tikr3r_b") });
+  fd.dispatch("MESSAGE_CREATE", { message: mkMsg("sim-msg-2", "sim-int-2", "other_psn") });
+  fd.dispatch("MESSAGE_CREATE", { message: mkEncrypt("sim-msg-3", "sim-int-3") });
   return new Promise((resolve) => {
     setTimeout(() => {
       const c = cfg();
@@ -386,7 +413,7 @@ function runSim(ctx) {
         alerts: Object.keys(c.alerts || {}).length,
         sent: (ctx.vendetta._sent || []).map((o) => o.body && o.body.content)
       });
-    }, 3500);
+    }, 4e3);
   });
 }
 var plugin = {
