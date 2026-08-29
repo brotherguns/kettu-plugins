@@ -432,7 +432,7 @@ function handleMessage(msg, isBackfill) {
   }
 }
 function fireAlert(personId, oldPsn, newPsn, srcChannelId, suppress) {
-  if (suppress || backfillCount > 0)
+  if (suppress)
     return;
   try {
     const link = "https://discord.com/channels/" + cfg().guildId + "/" + srcChannelId;
