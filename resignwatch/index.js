@@ -172,7 +172,6 @@ function createRest(logger) {
 // plugins/resignwatch/index.tsx
 var DEFAULT_GUILD_ID = "1130158543237030049";
 var DEFAULT_FORUM_ID = "1146892703028760696";
-var DEFAULT_ALERT_COUNT = 3;
 var MAX_PSNS_PER_PERSON = 8;
 var MAX_INITIAL_THREADS = 100;
 var rest = null;
@@ -193,10 +192,6 @@ function cfg() {
     c.guildId = DEFAULT_GUILD_ID;
   if (c.forumId === void 0)
     c.forumId = DEFAULT_FORUM_ID;
-  if (c.alertCount === void 0)
-    c.alertCount = DEFAULT_ALERT_COUNT;
-  if (c.alertChannelId === void 0)
-    c.alertChannelId = "";
   if (!c.psns)
     c.psns = {};
   if (!c.alerts)
@@ -249,7 +244,7 @@ function collectText(msg) {
   return t;
 }
 function classify(msg) {
-  const inter = msg.interaction;
+  const inter = msg.interaction || msg.interactionMetadata;
   const name = inter && inter.name;
   const text = collectText(msg);
   let cmdName = null;
@@ -297,6 +292,7 @@ function parseChannelId(input) {
 var seenInteractions = {};
 var backfilled = {};
 var backfillCount = 0;
+var bulkScanning = false;
 function backfillThread(threadId) {
   return new Promise((resolve) => {
     if (!rest || !threadId || backfilled[threadId]) {
@@ -322,7 +318,7 @@ function backfillThread(threadId) {
           return;
         }
         for (let i = 0; i < msgs.length; i++)
-          handleMessage(msgs[i], true);
+          handleMessage(msgs[i]);
         if (msgs.length < 100 || pages >= 15) {
           finish();
           return;
@@ -353,10 +349,9 @@ function onMessage(payload) {
   } catch (e) {
   }
 }
-function handleMessage(msg, isBackfill) {
+function handleMessage(msg) {
   try {
     const c = cfg();
-    const bf = !!isBackfill;
     if (c.enabled === false)
       return;
     if (!msg || !msg.id)
@@ -371,7 +366,7 @@ function handleMessage(msg, isBackfill) {
     const parsed = classify(msg);
     if (!parsed)
       return;
-    const iid = msg.interaction && msg.interaction.id;
+    const iid = msg.interaction && msg.interaction.id || msg.interactionMetadata && msg.interactionMetadata.id;
     if (iid && seenInteractions[iid])
       return;
     if (iid) {
@@ -409,7 +404,7 @@ function handleMessage(msg, isBackfill) {
       c.alerts[key] = true;
       if (list.length < 2)
         return;
-      fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id, bf);
+      fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id, bulkScanning);
     };
     if (iid && msg.id) {
       rest.getCommandData(msg.channel_id, msg.id).then((body) => {
@@ -458,9 +453,11 @@ function scanForumInitial(maxThreads) {
       toast("ResignWatch: no threads found");
       return;
     }
+    bulkScanning = true;
     let i = 0;
     const next = () => {
       if (i >= ids.length) {
+        bulkScanning = false;
         toast("ResignWatch: initial scan queued " + ids.length + " threads");
         return;
       }
@@ -469,6 +466,7 @@ function scanForumInitial(maxThreads) {
     };
     next();
   }).catch(() => {
+    bulkScanning = false;
     toast("ResignWatch: forum enumeration failed");
   });
 }
@@ -502,7 +500,6 @@ function registerCommand() {
   }) || null;
 }
 function Settings() {
-  var _a;
   const React = vendetta.metro.common.React;
   const RN = vendetta.metro.common.ReactNative;
   const { ScrollView, View, Text, TextInput, TouchableOpacity, Switch } = RN;
@@ -510,14 +507,10 @@ function Settings() {
   const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
   const [guildId, setGuildId] = React.useState(c.guildId || "");
   const [forumId, setForumId] = React.useState(c.forumId || "");
-  const [alertChannel, setAlertChannel] = React.useState(c.alertChannelId || "");
-  const [alertCount, setAlertCount] = React.useState(String((_a = c.alertCount) != null ? _a : DEFAULT_ALERT_COUNT));
   const [enabled, setEnabled] = React.useState(c.enabled !== false);
   const save = () => {
     c.guildId = guildId.trim();
     c.forumId = forumId.trim();
-    c.alertChannelId = alertChannel.trim();
-    c.alertCount = Math.max(1, Math.floor(Number(alertCount) || DEFAULT_ALERT_COUNT));
     c.enabled = enabled;
     forceUpdate();
     toast("ResignWatch settings saved");
@@ -555,10 +548,6 @@ function Settings() {
     /* @__PURE__ */ React.createElement(TextInput, { style, value: guildId, onChangeText: setGuildId, keyboardType: "numeric", placeholder: DEFAULT_GUILD_ID, placeholderTextColor: "#6d6f78" }),
     /* @__PURE__ */ React.createElement(Text, { style: label }, "Forum (or thread) to watch"),
     /* @__PURE__ */ React.createElement(TextInput, { style, value: forumId, onChangeText: setForumId, keyboardType: "numeric", placeholder: DEFAULT_FORUM_ID, placeholderTextColor: "#6d6f78" }),
-    /* @__PURE__ */ React.createElement(Text, { style: label }, "Alert channel ID (blank = same thread it happened in)"),
-    /* @__PURE__ */ React.createElement(TextInput, { style, value: alertChannel, onChangeText: setAlertChannel, keyboardType: "numeric", placeholder: "leave blank", placeholderTextColor: "#6d6f78" }),
-    /* @__PURE__ */ React.createElement(Text, { style: label }, "How many alert messages"),
-    /* @__PURE__ */ React.createElement(TextInput, { style, value: alertCount, onChangeText: setAlertCount, keyboardType: "numeric", placeholder: "3", placeholderTextColor: "#6d6f78" }),
     /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: save, style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 10 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Save")),
     /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: resetTracking, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, alignItems: "center" } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#f23f43", fontWeight: "600", fontSize: 15 } }, "Clear tracking")),
     /* @__PURE__ */ React.createElement(View, { style: { marginTop: 18 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 6 } }, "Tracked: ", personCount, " person(s), ", alertCountTotal, " alert(s) fired"), Object.keys(c.psns || {}).map((id) => /* @__PURE__ */ React.createElement(View, { key: id, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 15 } }, "<@" + id + ">"), /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13 } }, (c.psns[id] || []).join(" \xB7 ")))))
@@ -611,11 +600,8 @@ var plugin = {
       subscriptions.push(() => FD.unsubscribe("MESSAGE_UPDATE", onMessage));
       FD.subscribe("THREAD_CREATE", onThreadCreate);
       subscriptions.push(() => FD.unsubscribe("THREAD_CREATE", onThreadCreate));
-      if (rest && cfg().forumId) {
-        rest.getActiveThreads(cfg().forumId).then(seedThreads).catch(() => {
-        });
-      }
       registerCommand();
+      scanForumInitial();
       toast("ResignWatch: watching " + cfg().forumId);
     } catch (e) {
       toast("ResignWatch error: " + (e && e.message ? e.message : String(e)));
