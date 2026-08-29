@@ -127,6 +127,14 @@ function createRest(logger) {
       return out;
     });
   }
+  function getChannel(channelId) {
+    const url = `/channels/${channelId}`;
+    const p = RestAPI.get({ url }).then((body) => body && body.body !== void 0 ? body.body : body);
+    return p.catch((e) => {
+      logger.error("[kettu-mod] getChannel failed:", e);
+      return null;
+    });
+  }
   function getMessages(channelId, beforeId) {
     let url = `/channels/${channelId}/messages?limit=100`;
     if (beforeId)
@@ -146,6 +154,7 @@ function createRest(logger) {
     },
     getCommandData,
     getForumThreads,
+    getChannel,
     getMessages,
     deleteMessage(channelId, messageId) {
       request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");

@@ -127,6 +127,14 @@ function createRest(logger) {
       return out;
     });
   }
+  function getChannel(channelId) {
+    const url = `/channels/${channelId}`;
+    const p = RestAPI.get({ url }).then((body) => body && body.body !== void 0 ? body.body : body);
+    return p.catch((e) => {
+      logger.error("[kettu-mod] getChannel failed:", e);
+      return null;
+    });
+  }
   function getMessages(channelId, beforeId) {
     let url = `/channels/${channelId}/messages?limit=100`;
     if (beforeId)
@@ -146,6 +154,7 @@ function createRest(logger) {
     },
     getCommandData,
     getForumThreads,
+    getChannel,
     getMessages,
     deleteMessage(channelId, messageId) {
       request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");
@@ -194,6 +203,8 @@ function createRest(logger) {
 var storage;
 var rest = null;
 var unsubscribers = [];
+var pollTimer = null;
+var POLL_MS = 2500;
 var applying = {};
 function toast(msg) {
   try {
@@ -225,38 +236,38 @@ function enforce(target) {
   } catch (e) {
   }
 }
-function selfId() {
+function memberNick(guildId, userId) {
   try {
-    const U = vendetta.metro.findByProps("getCurrentUser", "getUser");
-    const u = U && U.getCurrentUser ? U.getCurrentUser() : null;
-    return u && u.id ? u.id : null;
+    const MS = vendetta.metro.findByProps("getMember", "getMembers");
+    const m = MS && MS.getMember ? MS.getMember(guildId, userId) : null;
+    if (m && typeof m.nick !== "undefined")
+      return m.nick || "";
   } catch (e) {
-    return null;
   }
+  return null;
 }
-function onMemberUpdate(payload) {
+function checkAll() {
   try {
     if (!rest)
       return;
     const c = cfg();
     if (c.enabled === false)
       return;
-    const guildId = payload && payload.guildId;
-    const userId = payload && payload.user && payload.user.id || selfId();
-    if (!guildId || !userId)
-      return;
-    const current = payload && payload.nick || "";
     const targets = c.targets;
     for (let i = 0; i < targets.length; i++) {
       const t = targets[i];
-      if (t.guildId === guildId && t.userId === userId) {
-        const desired = t.nick || "";
-        if (current !== desired)
-          enforce(t);
-      }
+      const current = memberNick(t.guildId, t.userId);
+      if (current === null)
+        continue;
+      const desired = t.nick || "";
+      if (current !== desired)
+        enforce(t);
     }
   } catch (e) {
   }
+}
+function onMemberUpdate(_payload) {
+  checkAll();
 }
 function Settings() {
   const React = vendetta.metro.common.React;
@@ -307,7 +318,7 @@ function Settings() {
       setEnabled(v);
       forceUpdate();
     } })),
-    /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13, marginBottom: 14 } }, "Reacts the instant a tracked user changes their nickname. No polling."),
+    /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13, marginBottom: 14 } }, "Re-checks every few seconds and snaps any drifted nickname back. Also reacts instantly on member updates."),
     /* @__PURE__ */ React.createElement(Text, { style: label }, "Target User ID"),
     /* @__PURE__ */ React.createElement(TextInput, { style: input, value: userId, onChangeText: setUserId, placeholder: "e.g. 877502759404974110", placeholderTextColor: "#6d6f78", keyboardType: "numeric" }),
     /* @__PURE__ */ React.createElement(Text, { style: label }, "Server (Guild) ID"),
@@ -331,12 +342,19 @@ var plugin = {
       const FD = vendetta.metro.common.FluxDispatcher;
       FD.subscribe("GUILD_MEMBER_UPDATE", onMemberUpdate);
       unsubscribers.push(() => FD.unsubscribe("GUILD_MEMBER_UPDATE", onMemberUpdate));
+      pollTimer = setInterval(checkAll, POLL_MS);
       toast("AutoForceNick: watching " + storage.targets.length + " target(s)");
     } catch (e) {
       toast("AutoForceNick error: " + (e && e.message ? e.message : String(e)));
     }
   },
   onUnload() {
+    try {
+      if (pollTimer)
+        clearInterval(pollTimer);
+    } catch (e) {
+    }
+    pollTimer = null;
     try {
       for (let i = 0; i < unsubscribers.length; i++)
         unsubscribers[i]();
