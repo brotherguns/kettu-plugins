@@ -236,20 +236,11 @@ function enforce(target) {
   } catch (e) {
   }
 }
-function selfId() {
-  try {
-    const U = vendetta.metro.findByProps("getUserId", "getCurrentUser");
-    return U && U.getUserId ? U.getUserId() : null;
-  } catch (e) {
-    return null;
-  }
-}
 function memberNick(guildId, userId) {
   return new Promise((resolve) => {
     if (!rest)
       return resolve(null);
-    const endpoint = userId === selfId() ? "@me" : userId;
-    rest.getMember(guildId, endpoint).then((m) => {
+    rest.getMember(guildId, userId).then((m) => {
       resolve(m && typeof m.nick !== "undefined" ? m.nick || "" : null);
     }).catch(() => resolve(null));
   });
