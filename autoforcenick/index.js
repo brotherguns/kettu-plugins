@@ -236,15 +236,23 @@ function enforce(target) {
   } catch (e) {
   }
 }
-function memberNick(guildId, userId) {
+function selfId() {
   try {
-    const MS = vendetta.metro.findByProps("getMember", "getMembers");
-    const m = MS && MS.getMember ? MS.getMember(guildId, userId) : null;
-    if (m && typeof m.nick !== "undefined")
-      return m.nick || "";
+    const U = vendetta.metro.findByProps("getUserId", "getCurrentUser");
+    return U && U.getUserId ? U.getUserId() : null;
   } catch (e) {
+    return null;
   }
-  return null;
+}
+function memberNick(guildId, userId) {
+  return new Promise((resolve) => {
+    if (!rest)
+      return resolve(null);
+    const endpoint = userId === selfId() ? "@me" : userId;
+    rest.getMember(guildId, endpoint).then((m) => {
+      resolve(m && typeof m.nick !== "undefined" ? m.nick || "" : null);
+    }).catch(() => resolve(null));
+  });
 }
 function checkAll() {
   try {
@@ -255,13 +263,15 @@ function checkAll() {
       return;
     const targets = c.targets;
     for (let i = 0; i < targets.length; i++) {
-      const t = targets[i];
-      const current = memberNick(t.guildId, t.userId);
-      if (current === null)
-        continue;
-      const desired = t.nick || "";
-      if (current !== desired)
-        enforce(t);
+      (function(t) {
+        memberNick(t.guildId, t.userId).then((current) => {
+          if (current === null)
+            return;
+          const desired = t.nick || "";
+          if (current !== desired)
+            enforce(t);
+        });
+      })(targets[i]);
     }
   } catch (e) {
   }
@@ -318,7 +328,7 @@ function Settings() {
       setEnabled(v);
       forceUpdate();
     } })),
-    /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13, marginBottom: 14 } }, "Re-checks every few seconds and snaps any drifted nickname back. Also reacts instantly on member updates."),
+    /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13, marginBottom: 14 } }, "Re-checks every few seconds via a live REST read and snaps any drifted nickname back. (Member-update events fire too, as a bonus.)"),
     /* @__PURE__ */ React.createElement(Text, { style: label }, "Target User ID"),
     /* @__PURE__ */ React.createElement(TextInput, { style: input, value: userId, onChangeText: setUserId, placeholder: "e.g. 877502759404974110", placeholderTextColor: "#6d6f78", keyboardType: "numeric" }),
     /* @__PURE__ */ React.createElement(Text, { style: label }, "Server (Guild) ID"),
