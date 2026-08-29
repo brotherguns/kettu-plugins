@@ -153,6 +153,27 @@ function createRest(logger) {
     kickMember(guildId, userId) {
       request("del", `/guilds/${guildId}/members/${userId}`, "kickMember");
     },
+    // Reads a single guild member's record (resolves to null on failure) so a
+    // plugin can inspect the current nickname before deciding to overwrite it.
+    getMember(guildId, userId) {
+      const url = `/guilds/${guildId}/members/${userId}`;
+      const p = RestAPI.get({ url }).then((b) => b && b.body !== void 0 ? b.body : b);
+      return p.catch((e) => {
+        logger.error("[kettu-mod] getMember failed:", e);
+        return null;
+      });
+    },
+    // Forces a member's server nickname. Requires Manage Nicknames in the guild
+    // and that the target's highest role sits below yours. Errors are queued and
+    // logged (never thrown) so the re-apply loop stays alive.
+    setNick(guildId, userId, nick) {
+      request(
+        "patch",
+        `/guilds/${guildId}/members/${userId}`,
+        `setNick(${userId})`,
+        { nick }
+      );
+    },
     // `untilISO` is an ISO-8601 timestamp at most 28 days out; null lifts the
     // timeout. Requires Moderate Members in the guild.
     timeoutMember(guildId, userId, untilISO) {
@@ -428,9 +449,13 @@ function handleMessage(msg) {
 function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
   try {
     const link = "https://discord.com/channels/" + cfg().guildId + "/" + srcChannelId;
-    toast(
-      "\u{1F6A8} <@" + personId + "> is resigning to a different PSN!\n" + oldPsn + " -> " + newPsn + "\n" + link
-    );
+    const line = "\u{1F6A8} **<@" + personId + "> is resigning to a different PSN!**\n" + oldPsn + " -> " + newPsn + "\n" + link;
+    const mu = vendetta.metro.findByProps("sendBotMessage");
+    if (mu && typeof mu.sendBotMessage === "function") {
+      mu.sendBotMessage(srcChannelId, line);
+    } else {
+      toast(line);
+    }
   } catch (e) {
   }
 }
