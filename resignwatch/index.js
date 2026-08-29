@@ -450,9 +450,11 @@ function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
   try {
     const link = "https://discord.com/channels/" + cfg().guildId + "/" + srcChannelId;
     const line = "\u{1F6A8} **<@" + personId + "> is resigning to a different PSN!**\n" + oldPsn + " -> " + newPsn + "\n" + link;
+    const sc = vendetta.metro.findByProps("getChannelId");
+    const target = sc && sc.getChannelId && sc.getChannelId() || srcChannelId;
     const mu = vendetta.metro.findByProps("sendBotMessage");
     if (mu && typeof mu.sendBotMessage === "function") {
-      mu.sendBotMessage(srcChannelId, line);
+      mu.sendBotMessage(target, line);
     } else {
       toast(line);
     }
