@@ -127,6 +127,14 @@ function createRest(logger) {
       return out;
     });
   }
+  function getChannel(channelId) {
+    const url = `/channels/${channelId}`;
+    const p = RestAPI.get({ url }).then((body) => body && body.body !== void 0 ? body.body : body);
+    return p.catch((e) => {
+      logger.error("[kettu-mod] getChannel failed:", e);
+      return null;
+    });
+  }
   function getMessages(channelId, beforeId) {
     let url = `/channels/${channelId}/messages?limit=100`;
     if (beforeId)
@@ -146,6 +154,7 @@ function createRest(logger) {
     },
     getCommandData,
     getForumThreads,
+    getChannel,
     getMessages,
     deleteMessage(channelId, messageId) {
       request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");
@@ -240,6 +249,27 @@ function isInForum(msg) {
     const ch = ChannelStore && ChannelStore.getChannel(msg.channel_id);
     if (ch && ch.parent_id === c.forumId)
       return true;
+    const id = msg.channel_id;
+    if (id && !knownThreads[id] && !ignoredThreads[id] && !fetchingThreads[id] && rest) {
+      fetchingThreads[id] = true;
+      rest.getChannel(id).then((res) => {
+        fetchingThreads[id] = false;
+        const parent = res && (res.parent_id || res.parentId);
+        const inForum = parent && parent === c.forumId || res && res.id === c.forumId;
+        if (inForum) {
+          knownThreads[id] = true;
+          try {
+            window.__rwAsync = { id, parent };
+          } catch (_) {
+          }
+          handleMessage(msg);
+        } else {
+          ignoredThreads[id] = true;
+        }
+      }).catch(() => {
+        fetchingThreads[id] = false;
+      });
+    }
     return false;
   } catch (e) {
     return false;
@@ -312,6 +342,8 @@ function parseChannelId(input) {
 }
 var seenInteractions = {};
 var backfilled = {};
+var ignoredThreads = {};
+var fetchingThreads = {};
 var backfillCount = 0;
 function backfillThread(threadId) {
   return new Promise((resolve) => {
@@ -452,6 +484,10 @@ function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
     const line = "\u{1F6A8} **<@" + personId + "> is resigning to a different PSN!**\n" + oldPsn + " -> " + newPsn + "\n" + link;
     const sc = vendetta.metro.findByProps("getChannelId");
     const target = sc && sc.getChannelId && sc.getChannelId() || srcChannelId;
+    try {
+      window.__rw = { target, scType: typeof sc, src: srcChannelId, t: Date.now() };
+    } catch (_) {
+    }
     const mu = vendetta.metro.findByProps("sendBotMessage");
     if (mu && typeof mu.sendBotMessage === "function") {
       mu.sendBotMessage(target, line);
