@@ -103,11 +103,28 @@ function createRest(logger) {
       return null;
     });
   }
-  function getActiveThreads(forumId) {
-    const p = RestAPI.get({ url: `/channels/${forumId}/threads/active` }).then((body) => body && body.body !== void 0 ? body.body : body);
-    return p.catch((e) => {
-      logger.error("[kettu-mod] active-threads failed:", e);
-      return null;
+  function getForumThreads(forumId, archived, maxThreads) {
+    const out = [];
+    let offset = 0;
+    const limit = 25;
+    const page = () => {
+      const url = `/channels/${forumId}/threads/search?archived=${archived ? "true" : "false"}&sort_by=last_message_time&sort_order=desc&limit=${limit}&tag_setting=match_some&offset=${offset}`;
+      return RestAPI.get({ url }).then((b) => {
+        const body = b && b.body !== void 0 ? b.body : b;
+        const threads = body && body.threads || [];
+        for (let i = 0; i < threads.length; i++) {
+          if (threads[i] && threads[i].id)
+            out.push(threads[i].id);
+        }
+        if (threads.length < limit || !body || !body.has_more || out.length >= maxThreads)
+          return out;
+        offset += limit;
+        return page();
+      });
+    };
+    return page().catch((e) => {
+      logger.error("[kettu-mod] getForumThreads failed:", e);
+      return out;
     });
   }
   function getMessages(channelId, beforeId) {
@@ -128,7 +145,7 @@ function createRest(logger) {
       request("post", `/channels/${channelId}/messages`, "sendMessage", { content });
     },
     getCommandData,
-    getActiveThreads,
+    getForumThreads,
     getMessages,
     deleteMessage(channelId, messageId) {
       request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");
@@ -157,6 +174,7 @@ var DEFAULT_GUILD_ID = "1130158543237030049";
 var DEFAULT_FORUM_ID = "1146892703028760696";
 var DEFAULT_ALERT_COUNT = 3;
 var MAX_PSNS_PER_PERSON = 8;
+var MAX_INITIAL_THREADS = 100;
 var rest = null;
 var subscriptions = [];
 var cmdUnregister = null;
@@ -186,14 +204,6 @@ function cfg() {
   return c;
 }
 var knownThreads = {};
-function seedThreads(resp) {
-  const threads = resp && (resp.threads || resp.body && resp.body.threads) || [];
-  for (let i = 0; i < threads.length; i++) {
-    const t = threads[i];
-    if (t && t.id)
-      knownThreads[t.id] = true;
-  }
-}
 function onThreadCreate(payload) {
   const t = payload && (payload.thread || payload.channel);
   if (t && t.id) {
@@ -288,39 +298,44 @@ var seenInteractions = {};
 var backfilled = {};
 var backfillCount = 0;
 function backfillThread(threadId) {
-  if (!rest || !threadId || backfilled[threadId])
-    return;
-  backfilled[threadId] = true;
-  backfillCount++;
-  let before = null;
-  let pages = 0;
-  const finish = () => {
-    backfillCount--;
-  };
-  const page = () => {
-    if (!rest) {
-      finish();
+  return new Promise((resolve) => {
+    if (!rest || !threadId || backfilled[threadId]) {
+      resolve();
       return;
     }
-    rest.getMessages(threadId, before ? before : void 0).then((msgs) => {
-      if (!msgs || !msgs.length) {
+    backfilled[threadId] = true;
+    backfillCount++;
+    let before = null;
+    let pages = 0;
+    const finish = () => {
+      backfillCount--;
+      resolve();
+    };
+    const page = () => {
+      if (!rest) {
         finish();
         return;
       }
-      for (let i = 0; i < msgs.length; i++)
-        handleMessage(msgs[i]);
-      if (msgs.length < 100 || pages >= 15) {
+      rest.getMessages(threadId, before ? before : void 0).then((msgs) => {
+        if (!msgs || !msgs.length) {
+          finish();
+          return;
+        }
+        for (let i = 0; i < msgs.length; i++)
+          handleMessage(msgs[i], true);
+        if (msgs.length < 100 || pages >= 15) {
+          finish();
+          return;
+        }
+        before = msgs[msgs.length - 1].id;
+        pages++;
+        page();
+      }).catch(() => {
         finish();
-        return;
-      }
-      before = msgs[msgs.length - 1].id;
-      pages++;
-      page();
-    }).catch(() => {
-      finish();
-    });
-  };
-  page();
+      });
+    };
+    page();
+  });
 }
 function onMessage(payload) {
   if (!rest)
@@ -338,9 +353,10 @@ function onMessage(payload) {
   } catch (e) {
   }
 }
-function handleMessage(msg) {
+function handleMessage(msg, isBackfill) {
   try {
     const c = cfg();
+    const bf = !!isBackfill;
     if (c.enabled === false)
       return;
     if (!msg || !msg.id)
@@ -350,11 +366,11 @@ function handleMessage(msg) {
     const tid = msg.channel_id;
     if (tid)
       knownThreads[tid] = true;
+    if (tid && !backfilled[tid])
+      backfillThread(tid);
     const parsed = classify(msg);
     if (!parsed)
       return;
-    if (tid && !backfilled[tid])
-      backfillThread(tid);
     const iid = msg.interaction && msg.interaction.id;
     if (iid && seenInteractions[iid])
       return;
@@ -393,7 +409,7 @@ function handleMessage(msg) {
       c.alerts[key] = true;
       if (list.length < 2)
         return;
-      fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id);
+      fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id, bf);
     };
     if (iid && msg.id) {
       rest.getCommandData(msg.channel_id, msg.id).then((body) => {
@@ -415,18 +431,14 @@ function handleMessage(msg) {
   } catch (e) {
   }
 }
-function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
-  if (backfillCount > 0)
+function fireAlert(personId, oldPsn, newPsn, srcChannelId, suppress) {
+  if (suppress || backfillCount > 0)
     return;
   try {
-    const c = cfg();
-    const target = c.alertChannelId || srcChannelId;
-    const link = "https://discord.com/channels/" + c.guildId + "/" + srcChannelId;
-    const n = Math.max(1, Math.floor(Number(c.alertCount) || DEFAULT_ALERT_COUNT));
-    const line = "\u{1F6A8} <@" + personId + "> is resigning to a different PSN!\n" + oldPsn + " -> " + newPsn + "\n" + link;
-    for (let i = 0; i < n; i++)
-      rest.sendMessage(target, line);
-    toast("ResignWatch: flagged " + newPsn);
+    const link = "https://discord.com/channels/" + cfg().guildId + "/" + srcChannelId;
+    toast(
+      "\u{1F6A8} <@" + personId + "> is resigning to a different PSN!\n" + oldPsn + " -> " + newPsn + "\n" + link
+    );
   } catch (e) {
   }
 }
@@ -434,23 +446,30 @@ function scanThreadById(id) {
   backfillThread(id);
   toast("ResignWatch: scanning " + id);
 }
-function scanActiveThreads() {
+function scanForumInitial(maxThreads) {
   if (!rest) {
     toast("ResignWatch: not ready");
     return;
   }
-  toast("ResignWatch: scanning active threads...");
-  rest.getActiveThreads(cfg().forumId).then((a) => {
-    const ts = a && (a.threads || a.body && a.body.threads) || [];
-    if (!ts.length) {
-      toast("ResignWatch: no active threads found");
+  const cap = maxThreads || MAX_INITIAL_THREADS;
+  toast("ResignWatch: enumerating forum threads...");
+  rest.getForumThreads(cfg().forumId, false, cap).then((ids) => {
+    if (!ids.length) {
+      toast("ResignWatch: no threads found");
       return;
     }
-    for (let i = 0; i < ts.length; i++)
-      if (ts[i] && ts[i].id)
-        backfillThread(ts[i].id);
+    let i = 0;
+    const next = () => {
+      if (i >= ids.length) {
+        toast("ResignWatch: initial scan queued " + ids.length + " threads");
+        return;
+      }
+      const id = ids[i++];
+      backfillThread(id).then(next);
+    };
+    next();
   }).catch(() => {
-    toast("ResignWatch: active-threads fetch failed");
+    toast("ResignWatch: forum enumeration failed");
   });
 }
 function registerCommand() {
@@ -459,7 +478,7 @@ function registerCommand() {
     return;
   cmdUnregister = cmds.registerCommand({
     name: "resignwatch",
-    description: "ResignWatch: scan a thread's history (or all active threads) for multi-PSN resigns",
+    description: "ResignWatch: scan a thread's history, or (no arg) every active forum thread, for multi-PSN resigns",
     args: [
       {
         type: 3,
@@ -477,8 +496,8 @@ function registerCommand() {
         scanThreadById(id);
         return { result: "ResignWatch: scanning " + id };
       }
-      scanActiveThreads();
-      return { result: "ResignWatch: scanning all active threads..." };
+      scanForumInitial();
+      return { result: "ResignWatch: scanning every active forum thread..." };
     }
   }) || null;
 }
