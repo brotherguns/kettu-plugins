@@ -292,7 +292,6 @@ function parseChannelId(input) {
 var seenInteractions = {};
 var backfilled = {};
 var backfillCount = 0;
-var bulkScanning = false;
 function backfillThread(threadId) {
   return new Promise((resolve) => {
     if (!rest || !threadId || backfilled[threadId]) {
@@ -404,7 +403,7 @@ function handleMessage(msg) {
       c.alerts[key] = true;
       if (list.length < 2)
         return;
-      fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id, bulkScanning);
+      fireAlert(personId, String(list[list.length - 2]), psn, msg.channel_id);
     };
     if (iid && msg.id) {
       rest.getCommandData(msg.channel_id, msg.id).then((body) => {
@@ -426,9 +425,7 @@ function handleMessage(msg) {
   } catch (e) {
   }
 }
-function fireAlert(personId, oldPsn, newPsn, srcChannelId, suppress) {
-  if (suppress)
-    return;
+function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
   try {
     const link = "https://discord.com/channels/" + cfg().guildId + "/" + srcChannelId;
     toast(
@@ -453,11 +450,9 @@ function scanForumInitial(maxThreads) {
       toast("ResignWatch: no threads found");
       return;
     }
-    bulkScanning = true;
     let i = 0;
     const next = () => {
       if (i >= ids.length) {
-        bulkScanning = false;
         toast("ResignWatch: initial scan queued " + ids.length + " threads");
         return;
       }
@@ -466,7 +461,6 @@ function scanForumInitial(maxThreads) {
     };
     next();
   }).catch(() => {
-    bulkScanning = false;
     toast("ResignWatch: forum enumeration failed");
   });
 }
