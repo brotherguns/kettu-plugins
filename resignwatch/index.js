@@ -452,7 +452,10 @@ function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
     const line = "\u{1F6A8} **<@" + personId + "> is resigning to a different PSN!**\n" + oldPsn + " -> " + newPsn + "\n" + link;
     const sc = vendetta.metro.findByProps("getChannelId");
     const target = sc && sc.getChannelId && sc.getChannelId() || srcChannelId;
-    console.log("RW_FIRE target=" + target + " scType=" + typeof sc + " srcChannelId=" + srcChannelId);
+    try {
+      window.__rw = { target, scType: typeof sc, src: srcChannelId, t: Date.now() };
+    } catch (_) {
+    }
     const mu = vendetta.metro.findByProps("sendBotMessage");
     if (mu && typeof mu.sendBotMessage === "function") {
       mu.sendBotMessage(target, line);
