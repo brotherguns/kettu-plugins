@@ -1,6 +1,6 @@
 {
   "name": "AutoDelete",
-  "description": "Auto-deletes messages from blacklisted users in configured servers (requires Manage Messages).",
+  "description": "Auto-deletes messages. Channel mode: every new message in a specific channel. User mode: messages from blacklisted users in their servers. Requires Manage Messages.",
   "authors": [
     {
       "name": "brotherguns",
@@ -8,5 +8,5 @@
     }
   ],
   "main": "index.js",
-  "hash": "d7843f5bc720a483784e084bcfa4708d796c1a8db67dcc3a22c28d6fcad932bf"
+  "hash": "8ff62c8735bd8c4805ba03d578a9a160277aa60d15bf77039172af0667bed414"
 }

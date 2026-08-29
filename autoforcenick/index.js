@@ -18,12 +18,12 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// plugins/autodelete/index.tsx
-var autodelete_exports = {};
-__export(autodelete_exports, {
-  default: () => autodelete_default
+// plugins/autoforcenick/index.tsx
+var autoforcenick_exports = {};
+__export(autoforcenick_exports, {
+  default: () => autoforcenick_default
 });
-module.exports = __toCommonJS(autodelete_exports);
+module.exports = __toCommonJS(autoforcenick_exports);
 
 // lib/queue.ts
 function createQueue(opts = {}) {
@@ -190,24 +190,11 @@ function createRest(logger) {
   };
 }
 
-// lib/rules.ts
-function matches(rules, userId, guildId) {
-  return findRule(rules, userId, guildId) !== null;
-}
-function findRule(rules, userId, guildId) {
-  if (!userId || !guildId || !rules)
-    return null;
-  for (let i = 0; i < rules.length; i++) {
-    if (rules[i].userId === userId && rules[i].guildId === guildId)
-      return rules[i];
-  }
-  return null;
-}
-
-// plugins/autodelete/index.tsx
+// plugins/autoforcenick/index.tsx
 var storage;
 var rest = null;
-var unsubscribe = null;
+var unsubscribers = [];
+var applying = {};
 function toast(msg) {
   try {
     vendetta.ui.toasts.showToast(msg);
@@ -216,46 +203,58 @@ function toast(msg) {
 }
 function cfg() {
   const s = storage || vendetta.plugin.storage;
-  if (!s.mode)
-    s.mode = "channel";
-  if (!s.userRules)
-    s.userRules = [];
-  if (!s.channels)
-    s.channels = [];
+  if (!s.targets)
+    s.targets = [];
+  if (s.enabled === void 0)
+    s.enabled = true;
   return s;
 }
-function channelIndex(channelId) {
-  const list = cfg().channels;
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].channelId === channelId)
-      return i;
+function enforce(target) {
+  try {
+    if (!rest || !target || !target.guildId || !target.userId)
+      return;
+    const key = target.guildId + ":" + target.userId;
+    if (applying[key])
+      return;
+    applying[key] = true;
+    rest.setNick(target.guildId, target.userId, target.nick || "");
+    toast("AutoForceNick: reset <@" + target.userId + "> to \u300C" + (target.nick || "") + "\u300D");
+    setTimeout(() => {
+      applying[key] = false;
+    }, 4e3);
+  } catch (e) {
   }
-  return -1;
 }
-function onMessageCreate(payload) {
+function selfId() {
+  try {
+    const U = vendetta.metro.findByProps("getCurrentUser", "getUser");
+    const u = U && U.getCurrentUser ? U.getCurrentUser() : null;
+    return u && u.id ? u.id : null;
+  } catch (e) {
+    return null;
+  }
+}
+function onMemberUpdate(payload) {
   try {
     if (!rest)
       return;
     const c = cfg();
-    const msg = payload && payload.message;
-    if (!msg)
+    if (c.enabled === false)
       return;
-    const authorId = msg.author && msg.author.id;
-    const channelId = payload && payload.channelId || msg.channel_id;
-    if (!channelId)
+    const guildId = payload && payload.guildId;
+    const userId = payload && payload.user && payload.user.id || selfId();
+    if (!guildId || !userId)
       return;
-    if (c.mode === "channel") {
-      if (channelIndex(channelId) !== -1)
-        rest.deleteMessage(channelId, msg.id);
-      return;
+    const current = payload && payload.nick || "";
+    const targets = c.targets;
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
+      if (t.guildId === guildId && t.userId === userId) {
+        const desired = t.nick || "";
+        if (current !== desired)
+          enforce(t);
+      }
     }
-    const ChannelStore = vendetta.metro.findByProps("getChannel", "getDMFromUserId");
-    const ch = ChannelStore && ChannelStore.getChannel && ChannelStore.getChannel(channelId);
-    const guildId = ch && ch.guild_id;
-    if (!guildId)
-      return;
-    if (matches(c.userRules, authorId, guildId))
-      rest.deleteMessage(channelId, msg.id);
   } catch (e) {
   }
 }
@@ -265,10 +264,10 @@ function Settings() {
   const { ScrollView, View, Text, TextInput, TouchableOpacity, Switch } = RN;
   const c = cfg();
   const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
-  const [mode, setMode] = React.useState(c.mode === "channel");
+  const [enabled, setEnabled] = React.useState(c.enabled !== false);
   const [userId, setUserId] = React.useState("");
   const [guildId, setGuildId] = React.useState("");
-  const [channelId, setChannelId] = React.useState("");
+  const [nick, setNick] = React.useState("");
   const input = {
     color: "#fff",
     backgroundColor: "#1e1f22",
@@ -280,33 +279,20 @@ function Settings() {
   };
   const label = { color: "#b5bac1", fontSize: 13, marginBottom: 4 };
   const row = { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 };
-  const addUserRule = () => {
+  const addTarget = () => {
     if (!userId.trim() || !guildId.trim())
       return;
-    c.userRules.push({ userId: userId.trim(), guildId: guildId.trim() });
+    c.targets.push({ userId: userId.trim(), guildId: guildId.trim(), nick });
     setUserId("");
     setGuildId("");
+    setNick("");
     forceUpdate();
   };
-  const addChannelRule = () => {
-    if (!channelId.trim())
-      return;
-    if (channelIndex(channelId.trim()) !== -1) {
-      toast("Channel already added");
-      return;
-    }
-    c.channels.push({ channelId: channelId.trim() });
-    setChannelId("");
+  const removeTarget = (i) => {
+    c.targets.splice(i, 1);
     forceUpdate();
   };
-  const removeUserRule = (i) => {
-    c.userRules.splice(i, 1);
-    forceUpdate();
-  };
-  const removeChannelRule = (i) => {
-    c.channels.splice(i, 1);
-    forceUpdate();
-  };
+  const applyNow = (t) => enforce(t);
   return /* @__PURE__ */ React.createElement(
     ScrollView,
     {
@@ -316,68 +302,57 @@ function Settings() {
       keyboardDismissMode: "interactive",
       automaticallyAdjustKeyboardInsets: true
     },
-    /* @__PURE__ */ React.createElement(View, { style: row }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "600" } }, "Channel mode"), /* @__PURE__ */ React.createElement(
-      Switch,
-      {
-        value: mode,
-        onValueChange: (v) => {
-          c.mode = v ? "channel" : "user";
-          setMode(v);
-          forceUpdate();
-        }
-      }
-    )),
-    /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13, marginBottom: 14 } }, mode ? "Deletes ANY new message in the channel(s) below, from anyone (needs Manage Messages)." : "Deletes new messages from the listed users in their servers (needs Manage Messages)."),
-    mode ? /* @__PURE__ */ React.createElement(View, null, /* @__PURE__ */ React.createElement(Text, { style: label }, "Channel ID"), /* @__PURE__ */ React.createElement(
-      TextInput,
-      {
-        style: input,
-        value: channelId,
-        onChangeText: setChannelId,
-        placeholder: "e.g. 1368145952266911755",
-        placeholderTextColor: "#6d6f78",
-        keyboardType: "numeric"
-      }
-    ), /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: addChannelRule, style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 16 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Add channel")), /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 8 } }, "Channels (", c.channels.length, ")"), c.channels.length === 0 ? /* @__PURE__ */ React.createElement(Text, { style: { color: "#6d6f78" } }, "No channels yet. Add a Channel ID above.") : c.channels.map((r, i) => /* @__PURE__ */ React.createElement(TouchableOpacity, { key: r.channelId + "-" + i, onPress: () => removeChannelRule(i), style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 15 } }, "Channel ", r.channelId), /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13 } }, "tap to remove")))) : /* @__PURE__ */ React.createElement(View, null, /* @__PURE__ */ React.createElement(Text, { style: label }, "User ID"), /* @__PURE__ */ React.createElement(TextInput, { style: input, value: userId, onChangeText: setUserId, placeholder: "e.g. 877502759404974110", placeholderTextColor: "#6d6f78", keyboardType: "numeric" }), /* @__PURE__ */ React.createElement(Text, { style: label }, "Server (Guild) ID"), /* @__PURE__ */ React.createElement(TextInput, { style: input, value: guildId, onChangeText: setGuildId, placeholder: "e.g. 1368145952266911755", placeholderTextColor: "#6d6f78", keyboardType: "numeric" }), /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: addUserRule, style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 16 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Add user rule")), /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 8 } }, "User rules (", c.userRules.length, ")"), c.userRules.length === 0 ? /* @__PURE__ */ React.createElement(Text, { style: { color: "#6d6f78" } }, "No rules yet. Add a User ID + Server ID above.") : c.userRules.map((r, i) => /* @__PURE__ */ React.createElement(TouchableOpacity, { key: r.userId + "-" + r.guildId + "-" + i, onPress: () => removeUserRule(i), style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 15 } }, "User ", r.userId), /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13 } }, "Server ", r.guildId, " \u2014 tap to remove"))))
+    /* @__PURE__ */ React.createElement(View, { style: row }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "600" } }, "Enabled"), /* @__PURE__ */ React.createElement(Switch, { value: enabled, onValueChange: (v) => {
+      c.enabled = v;
+      setEnabled(v);
+      forceUpdate();
+    } })),
+    /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13, marginBottom: 14 } }, "Reacts the instant a tracked user changes their nickname. No polling."),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "Target User ID"),
+    /* @__PURE__ */ React.createElement(TextInput, { style: input, value: userId, onChangeText: setUserId, placeholder: "e.g. 877502759404974110", placeholderTextColor: "#6d6f78", keyboardType: "numeric" }),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "Server (Guild) ID"),
+    /* @__PURE__ */ React.createElement(TextInput, { style: input, value: guildId, onChangeText: setGuildId, placeholder: "e.g. 1368145952266911755", placeholderTextColor: "#6d6f78", keyboardType: "numeric" }),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "Forced nickname"),
+    /* @__PURE__ */ React.createElement(TextInput, { style: input, value: nick, onChangeText: setNick, placeholder: "the nickname you want", placeholderTextColor: "#6d6f78" }),
+    /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: addTarget, style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 16 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Add target")),
+    /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 8 } }, "Targets (", c.targets.length, ")"),
+    c.targets.length === 0 ? /* @__PURE__ */ React.createElement(Text, { style: { color: "#6d6f78" } }, "No targets yet. Add a user + guild + nickname above.") : c.targets.map((t, i) => /* @__PURE__ */ React.createElement(View, { key: t.userId + "-" + t.guildId + "-" + i, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 15 } }, "<@" + t.userId + ">"), /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13 } }, "Server ", t.guildId, " \u2192 \u300C", t.nick || "", "\u300D"), /* @__PURE__ */ React.createElement(View, { style: { flexDirection: "row", marginTop: 8 } }, /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: () => applyNow(t), style: { backgroundColor: "#3b3d44", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12, marginRight: 8 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 13 } }, "Apply now")), /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: () => removeTarget(i), style: { backgroundColor: "#3b3d44", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#f23f43", fontSize: 13 } }, "Remove")))))
   );
 }
 var plugin = {
   onLoad() {
     try {
       storage = vendetta.plugin.storage;
-      if (!storage.mode)
-        storage.mode = "channel";
-      if (!storage.userRules)
-        storage.userRules = [];
-      if (!storage.channels)
-        storage.channels = [];
+      if (!storage.targets)
+        storage.targets = [];
+      if (storage.enabled === void 0)
+        storage.enabled = true;
       rest = createRest(vendetta.logger);
       const FD = vendetta.metro.common.FluxDispatcher;
-      FD.subscribe("MESSAGE_CREATE", onMessageCreate);
-      unsubscribe = () => FD.unsubscribe("MESSAGE_CREATE", onMessageCreate);
-      const c = cfg();
-      const count = c.mode === "channel" ? c.channels.length : c.userRules.length;
-      toast("AutoDelete: enabled (" + (c.mode === "channel" ? "channel" : "user") + " mode, " + count + ")");
+      FD.subscribe("GUILD_MEMBER_UPDATE", onMemberUpdate);
+      unsubscribers.push(() => FD.unsubscribe("GUILD_MEMBER_UPDATE", onMemberUpdate));
+      toast("AutoForceNick: watching " + storage.targets.length + " target(s)");
     } catch (e) {
-      toast("AutoDelete error: " + (e && e.message ? e.message : String(e)));
+      toast("AutoForceNick error: " + (e && e.message ? e.message : String(e)));
     }
   },
   onUnload() {
     try {
-      if (unsubscribe)
-        unsubscribe();
+      for (let i = 0; i < unsubscribers.length; i++)
+        unsubscribers[i]();
     } catch (e) {
     }
+    unsubscribers = [];
     try {
       if (rest)
         rest.dispose();
     } catch (e) {
     }
-    unsubscribe = null;
     rest = null;
+    applying = {};
   },
   settings: Settings
 };
-var autodelete_default = plugin;
+var autoforcenick_default = plugin;
 
 var __d=module.exports&&module.exports.default;return __d?__d:module.exports;})()

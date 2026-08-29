@@ -1,0 +1,12 @@
+{
+  "name": "AutoForceNick",
+  "description": "Locks a server member's nickname to the value you set: re-applies it instantly on any change and polls on an interval. Requires Manage Nicknames.",
+  "authors": [
+    {
+      "name": "brotherguns",
+      "id": "877502759404974110"
+    }
+  ],
+  "main": "index.js",
+  "hash": "8598ec176e6b7e236b2faf6d00ccf2d0a3b392c347a907d32e794f08af0c4f9d"
+}
