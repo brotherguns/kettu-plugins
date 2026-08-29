@@ -173,7 +173,7 @@ function createRest(logger) {
 var DEFAULT_GUILD_ID = "1130158543237030049";
 var DEFAULT_FORUM_ID = "1146892703028760696";
 var MAX_PSNS_PER_PERSON = 8;
-var MAX_INITIAL_THREADS = 100;
+var MAX_INITIAL_THREADS = 10;
 var rest = null;
 var subscriptions = [];
 var cmdUnregister = null;
