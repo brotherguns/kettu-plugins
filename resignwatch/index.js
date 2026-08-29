@@ -103,11 +103,19 @@ function createRest(logger) {
       return null;
     });
   }
+  function getActiveThreads(forumId) {
+    const p = RestAPI.get({ url: `/channels/${forumId}/threads/active` }).then((body) => body && body.body !== void 0 ? body.body : body);
+    return p.catch((e) => {
+      logger.error("[kettu-mod] active-threads failed:", e);
+      return null;
+    });
+  }
   return {
     sendMessage(channelId, content) {
       request("post", `/channels/${channelId}/messages`, "sendMessage", { content });
     },
     getCommandData,
+    getActiveThreads,
     deleteMessage(channelId, messageId) {
       request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");
     },
@@ -162,12 +170,28 @@ function cfg() {
     c.alerts = {};
   return c;
 }
+var knownThreads = {};
+function seedThreads(resp) {
+  const threads = resp && (resp.threads || resp.body && resp.body.threads) || [];
+  for (let i = 0; i < threads.length; i++) {
+    const t = threads[i];
+    if (t && t.id)
+      knownThreads[t.id] = true;
+  }
+}
+function onThreadCreate(payload) {
+  const t = payload && (payload.thread || payload.channel);
+  if (t && t.id)
+    knownThreads[t.id] = true;
+}
 function isInForum(msg) {
   try {
     const c = cfg();
     if (msg.guild_id && msg.guild_id !== c.guildId)
       return false;
     if (msg.channel_id === c.forumId)
+      return true;
+    if (knownThreads[msg.channel_id])
       return true;
     const ChannelStore = vendetta.metro.findByProps("getChannel", "getChannels");
     const ch = ChannelStore && ChannelStore.getChannel(msg.channel_id);
@@ -427,6 +451,12 @@ var plugin = {
       subscriptions.push(() => FD.unsubscribe("MESSAGE_CREATE", onMessage));
       FD.subscribe("MESSAGE_UPDATE", onMessage);
       subscriptions.push(() => FD.unsubscribe("MESSAGE_UPDATE", onMessage));
+      FD.subscribe("THREAD_CREATE", onThreadCreate);
+      subscriptions.push(() => FD.unsubscribe("THREAD_CREATE", onThreadCreate));
+      if (rest && cfg().forumId) {
+        rest.getActiveThreads(cfg().forumId).then(seedThreads).catch(() => {
+        });
+      }
       toast("ResignWatch: watching " + cfg().forumId);
     } catch (e) {
       toast("ResignWatch error: " + (e && e.message ? e.message : String(e)));
