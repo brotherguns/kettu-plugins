@@ -110,12 +110,26 @@ function createRest(logger) {
       return null;
     });
   }
+  function getMessages(channelId, beforeId) {
+    let url = `/channels/${channelId}/messages?limit=100`;
+    if (beforeId)
+      url += "&before=" + beforeId;
+    const p = RestAPI.get({ url }).then((body) => {
+      const arr = Array.isArray(body) ? body : body && body.body || [];
+      return arr;
+    });
+    return p.catch((e) => {
+      logger.error("[kettu-mod] getMessages failed:", e);
+      return [];
+    });
+  }
   return {
     sendMessage(channelId, content) {
       request("post", `/channels/${channelId}/messages`, "sendMessage", { content });
     },
     getCommandData,
     getActiveThreads,
+    getMessages,
     deleteMessage(channelId, messageId) {
       request("del", `/channels/${channelId}/messages/${messageId}`, "deleteMessage");
     },
@@ -181,8 +195,10 @@ function seedThreads(resp) {
 }
 function onThreadCreate(payload) {
   const t = payload && (payload.thread || payload.channel);
-  if (t && t.id)
+  if (t && t.id) {
     knownThreads[t.id] = true;
+    backfillThread(t.id);
+  }
 }
 function isInForum(msg) {
   try {
@@ -255,6 +271,43 @@ function psnFromText(text) {
   return null;
 }
 var seenInteractions = {};
+var backfilled = {};
+var backfillCount = 0;
+function backfillThread(threadId) {
+  if (!rest || !threadId || backfilled[threadId])
+    return;
+  backfilled[threadId] = true;
+  backfillCount++;
+  let before = null;
+  let pages = 0;
+  const finish = () => {
+    backfillCount--;
+  };
+  const page = () => {
+    if (!rest) {
+      finish();
+      return;
+    }
+    rest.getMessages(threadId, before ? before : void 0).then((msgs) => {
+      if (!msgs || !msgs.length) {
+        finish();
+        return;
+      }
+      for (let i = 0; i < msgs.length; i++)
+        handleMessage(msgs[i]);
+      if (msgs.length < 100 || pages >= 15) {
+        finish();
+        return;
+      }
+      before = msgs[msgs.length - 1].id;
+      pages++;
+      page();
+    }).catch(() => {
+      finish();
+    });
+  };
+  page();
+}
 function onMessage(payload) {
   if (!rest)
     return;
@@ -267,9 +320,27 @@ function onMessage(payload) {
       return;
     if (!isInForum(msg))
       return;
+    handleMessage(msg);
+  } catch (e) {
+  }
+}
+function handleMessage(msg) {
+  try {
+    const c = cfg();
+    if (c.enabled === false)
+      return;
+    if (!msg || !msg.id)
+      return;
+    if (!isInForum(msg))
+      return;
+    const tid = msg.channel_id;
+    if (tid)
+      knownThreads[tid] = true;
     const parsed = classify(msg);
     if (!parsed)
       return;
+    if (tid && !backfilled[tid])
+      backfillThread(tid);
     const iid = msg.interaction && msg.interaction.id;
     if (iid && seenInteractions[iid])
       return;
@@ -331,6 +402,8 @@ function onMessage(payload) {
   }
 }
 function fireAlert(personId, oldPsn, newPsn, srcChannelId) {
+  if (backfillCount > 0)
+    return;
   try {
     const c = cfg();
     const target = c.alertChannelId || srcChannelId;
@@ -355,6 +428,7 @@ function Settings() {
   const [alertChannel, setAlertChannel] = React.useState(c.alertChannelId || "");
   const [alertCount, setAlertCount] = React.useState(String((_a = c.alertCount) != null ? _a : DEFAULT_ALERT_COUNT));
   const [enabled, setEnabled] = React.useState(c.enabled !== false);
+  const [backfillId, setBackfillId] = React.useState("");
   const save = () => {
     c.guildId = guildId.trim();
     c.forumId = forumId.trim();
@@ -369,6 +443,34 @@ function Settings() {
     c.alerts = {};
     forceUpdate();
     toast("ResignWatch: tracking cleared");
+  };
+  const scanThread = () => {
+    const id = backfillId.trim();
+    if (!id) {
+      toast("ResignWatch: enter a thread ID");
+      return;
+    }
+    backfillThread(id);
+    toast("ResignWatch: scanning thread " + id);
+  };
+  const rescanAll = () => {
+    if (!rest) {
+      toast("ResignWatch: not ready");
+      return;
+    }
+    toast("ResignWatch: scanning active threads...");
+    rest.getActiveThreads(c.forumId).then((a) => {
+      const ts = a && (a.threads || a.body && a.body.threads) || [];
+      if (!ts.length) {
+        toast("ResignWatch: no active threads found");
+        return;
+      }
+      for (let i = 0; i < ts.length; i++)
+        if (ts[i] && ts[i].id)
+          backfillThread(ts[i].id);
+    }).catch(() => {
+      toast("ResignWatch: active-threads fetch failed");
+    });
   };
   const personCount = c.psns ? Object.keys(c.psns).length : 0;
   const alertCountTotal = c.alerts ? Object.keys(c.alerts).length : 0;
@@ -403,6 +505,10 @@ function Settings() {
     /* @__PURE__ */ React.createElement(TextInput, { style, value: alertCount, onChangeText: setAlertCount, keyboardType: "numeric", placeholder: "3", placeholderTextColor: "#6d6f78" }),
     /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: save, style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 10 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Save")),
     /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: resetTracking, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, alignItems: "center" } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#f23f43", fontWeight: "600", fontSize: 15 } }, "Clear tracking")),
+    /* @__PURE__ */ React.createElement(Text, { style: label }, "Scan a thread's full history for commands"),
+    /* @__PURE__ */ React.createElement(TextInput, { style, value: backfillId, onChangeText: setBackfillId, keyboardType: "numeric", placeholder: "thread ID", placeholderTextColor: "#6d6f78" }),
+    /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: scanThread, style: { backgroundColor: "#5865f2", borderRadius: 8, padding: 12, alignItems: "center", marginBottom: 10 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Scan thread")),
+    /* @__PURE__ */ React.createElement(TouchableOpacity, { onPress: rescanAll, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, alignItems: "center" } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontWeight: "600", fontSize: 15 } }, "Rescan all active threads")),
     /* @__PURE__ */ React.createElement(View, { style: { marginTop: 18 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 6 } }, "Tracked: ", personCount, " person(s), ", alertCountTotal, " alert(s) fired"), Object.keys(c.psns || {}).map((id) => /* @__PURE__ */ React.createElement(View, { key: id, style: { backgroundColor: "#2b2d31", borderRadius: 8, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ React.createElement(Text, { style: { color: "#fff", fontSize: 15 } }, "<@" + id + ">"), /* @__PURE__ */ React.createElement(Text, { style: { color: "#b5bac1", fontSize: 13 } }, (c.psns[id] || []).join(" \xB7 ")))))
   );
 }
