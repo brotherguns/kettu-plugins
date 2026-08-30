@@ -344,6 +344,10 @@ var plugin = {
       FD.subscribe("GUILD_MEMBER_UPDATE", onMemberUpdate);
       unsubscribers.push(() => FD.unsubscribe("GUILD_MEMBER_UPDATE", onMemberUpdate));
       pollTimer = setInterval(checkAll, POLL_MS);
+      try {
+        (vendetta.logger || console).log("[afn] onLoad targets=" + storage.targets.length);
+      } catch (e) {
+      }
       toast("AutoForceNick: watching " + storage.targets.length + " target(s)");
     } catch (e) {
       toast("AutoForceNick error: " + (e && e.message ? e.message : String(e)));
