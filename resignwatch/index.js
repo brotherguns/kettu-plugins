@@ -471,6 +471,8 @@ function handleMessage(msg) {
           }
         }
         record(optPsn || psnFromText(parsed.text));
+      }).catch(() => {
+        record(psnFromText(parsed.text));
       });
     } else {
       record(psnFromText(parsed.text));
